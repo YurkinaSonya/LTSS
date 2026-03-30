@@ -1,0 +1,19 @@
+{
+    "name": "Game.Core",
+    "rootNamespace": "",
+    "references": [
+        "GUID:1932c5925f7c1214580a094e1e77a561",
+        "GUID:4e5b64771e6944f49b8aca67398e3cef",
+        "GUID:0d8beb7f090555447a6cf5ce9e54dbb4",
+        "Unity.RenderPipelines.HighDefinition.Runtime"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
