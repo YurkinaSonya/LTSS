@@ -19,7 +19,6 @@ public class UIController : MonoBehaviour, IInitializable, IDisposable
 
     [Header ("other controllers")]
     [SerializeField] private PopupController popupController;
-    [SerializeField] private BlurController blurController;
 
     private readonly Dictionary<ScreenId, ScreenView> _viewsByType =
         new Dictionary<ScreenId, ScreenView>();
@@ -69,7 +68,6 @@ public class UIController : MonoBehaviour, IInitializable, IDisposable
 
         BuildScreenRegistry();
         popupController?.Initialize(_uiContext, _popupNavigation, _appLogger);
-        blurController?.Initialize();
 
         if (_stateStore != null)
         {
@@ -120,7 +118,6 @@ public class UIController : MonoBehaviour, IInitializable, IDisposable
     {
         ApplyScreen(state.CurrentScreen);
         popupController?.ApplyPopupStack(state.PopupStack);
-        blurController?.SetBlur(state.PopupCount > 0);
     }
 
     private void ApplyScreen(ScreenId screenId)

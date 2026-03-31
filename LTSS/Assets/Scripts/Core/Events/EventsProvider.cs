@@ -25,15 +25,6 @@ namespace Game.Core.Events
             }
         }
 
-        public class ChangeBlurEvent
-        {
-            public readonly bool IsActive;
-            public ChangeBlurEvent(bool isActive)
-            {
-                IsActive = isActive;
-            }
-        }
-
         public sealed class ApplicationStateChangedEvent
         {
             public ApplicationStateSnapshot State { get; }
