@@ -4,6 +4,7 @@ using Game.Core.Application.Bootstrap;
 using Game.Core.Application.Logging;
 using Game.Core.Application.Navigation;
 using Game.Core.Application.Networking;
+using Game.Core.Application.Session;
 using Game.Core.Application.State;
 using Game.Core.Events;
 
@@ -85,8 +86,38 @@ namespace Game.Core.Installers
                 .AsSingle()
                 .NonLazy();
 
+            Container.Bind<IJsonNodeParser>()
+                .To<JsonNodeParser>()
+                .AsSingle()
+                .NonLazy();
+
             Container.Bind<IApiClient>()
                 .To<UnityWebRequestApiClient>()
+                .AsSingle()
+                .NonLazy();
+
+            Container.Bind<IAuthApiClient>()
+                .To<AuthApiClient>()
+                .AsSingle()
+                .NonLazy();
+
+            Container.Bind<IRunApiClient>()
+                .To<RunApiClient>()
+                .AsSingle()
+                .NonLazy();
+
+            Container.Bind<ISessionRuntimeFactory>()
+                .To<SessionRuntimeFactory>()
+                .AsSingle()
+                .NonLazy();
+
+            Container.Bind<ISessionPersistenceService>()
+                .To<SessionPersistenceService>()
+                .AsSingle()
+                .NonLazy();
+
+            Container.Bind<ISessionCoordinator>()
+                .To<SessionCoordinator>()
                 .AsSingle()
                 .NonLazy();
 
@@ -95,6 +126,11 @@ namespace Game.Core.Installers
             Container.Bind<IApplicationState>().To<GameplayState>().AsSingle();
             Container.Bind<IApplicationState>().To<ResultsState>().AsSingle();
             Container.Bind<IApplicationState>().To<ErrorState>().AsSingle();
+            Container.Bind<IApplicationState>().To<LoginState>().AsSingle();
+            Container.Bind<IApplicationState>().To<AuthenticatingState>().AsSingle();
+            Container.Bind<IApplicationState>().To<LoadingSessionState>().AsSingle();
+            Container.Bind<IApplicationState>().To<SessionReadyState>().AsSingle();
+            Container.Bind<IApplicationState>().To<FatalErrorState>().AsSingle();
 
             if (uiController != null)
             {
@@ -103,6 +139,7 @@ namespace Game.Core.Installers
                     .AsSingle()
                     .NonLazy();
 
+                Container.QueueForInject(uiController);
                 Container.BindExecutionOrder<UIController>(-200);
             }
 

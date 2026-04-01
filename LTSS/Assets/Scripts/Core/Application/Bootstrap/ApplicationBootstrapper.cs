@@ -1,5 +1,6 @@
 using Game.Core.Application.Logging;
 using Game.Core.Application.Navigation;
+using Game.Core.Application.Session;
 using Game.Core.Application.State;
 using Zenject;
 
@@ -9,26 +10,26 @@ namespace Game.Core.Application.Bootstrap
     {
         private readonly ApplicationBootstrapSettings _settings;
         private readonly ApplicationStateMachine _stateMachine;
-        private readonly IApplicationNavigationService _navigation;
         private readonly IApplicationStateStore _stateStore;
         private readonly IGameSessionService _gameSessionService;
+        private readonly ISessionCoordinator _sessionCoordinator;
         private readonly IUserActionLogger _userActionLogger;
         private readonly IAppLogger _logger;
 
         public ApplicationBootstrapper(
             ApplicationBootstrapSettings settings,
             ApplicationStateMachine stateMachine,
-            IApplicationNavigationService navigation,
             IApplicationStateStore stateStore,
             IGameSessionService gameSessionService,
+            ISessionCoordinator sessionCoordinator,
             IUserActionLogger userActionLogger,
             IAppLogger logger)
         {
             _settings = settings;
             _stateMachine = stateMachine;
-            _navigation = navigation;
             _stateStore = stateStore;
             _gameSessionService = gameSessionService;
+            _sessionCoordinator = sessionCoordinator;
             _userActionLogger = userActionLogger;
             _logger = logger;
         }
@@ -43,13 +44,25 @@ namespace Game.Core.Application.Bootstrap
             _gameSessionService.ResetSession();
 
             _stateMachine.MoveTo(AppStateId.Bootstrapping);
-            _navigation.MoveTo(_settings.InitialState, "bootstrap");
+            _sessionCoordinator.RestoreIfPossible(ResolveFallbackState());
 
             _userActionLogger.Log(
                 UserActionType.ApplicationLifecycle,
-                "application_bootstrap_completed");
+                "application_bootstrap_initialized");
 
-            _logger.Info("Application bootstrap completed.");
+            _logger.Info("Application bootstrap initialized.");
+        }
+
+        private AppStateId ResolveFallbackState()
+        {
+            if (_settings.InitialState == AppStateId.MainMenu)
+            {
+                return AppStateId.Login;
+            }
+
+            return _settings.InitialState == AppStateId.None
+                ? AppStateId.Login
+                : _settings.InitialState;
         }
     }
 }

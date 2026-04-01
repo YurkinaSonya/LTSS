@@ -36,40 +36,55 @@ namespace Game.Core.Application.Networking
 
         public void Get<TResponse>(
             string relativePath,
-            Action<ApiResponse<TResponse>> onCompleted = null)
+            Action<ApiResponse<TResponse>> onCompleted = null,
+            ApiRequestOptions options = null)
         {
             if (_coroutineRunner == null)
             {
                 _logger.Error("CoroutineRunner is not available for HTTP GET request execution.");
+                onCompleted?.Invoke(new ApiResponse<TResponse>(
+                    false,
+                    0,
+                    "CoroutineRunner is not available.",
+                    string.Empty,
+                    default));
                 return;
             }
 
             _coroutineRunner.StartCoroutine(
-                SendRequest(relativePath, UnityWebRequest.kHttpVerbGET, null, onCompleted));
+                SendRequest(relativePath, UnityWebRequest.kHttpVerbGET, null, onCompleted, options));
         }
 
         public void Post<TRequest, TResponse>(
             string relativePath,
             TRequest body,
-            Action<ApiResponse<TResponse>> onCompleted = null)
+            Action<ApiResponse<TResponse>> onCompleted = null,
+            ApiRequestOptions options = null)
         {
             if (_coroutineRunner == null)
             {
                 _logger.Error("CoroutineRunner is not available for HTTP POST request execution.");
+                onCompleted?.Invoke(new ApiResponse<TResponse>(
+                    false,
+                    0,
+                    "CoroutineRunner is not available.",
+                    string.Empty,
+                    default));
                 return;
             }
 
             var payload = body == null ? string.Empty : _serializer.Serialize(body);
 
             _coroutineRunner.StartCoroutine(
-                SendRequest(relativePath, UnityWebRequest.kHttpVerbPOST, payload, onCompleted));
+                SendRequest(relativePath, UnityWebRequest.kHttpVerbPOST, payload, onCompleted, options));
         }
 
         private IEnumerator SendRequest<TResponse>(
             string relativePath,
             string method,
             string payload,
-            Action<ApiResponse<TResponse>> onCompleted)
+            Action<ApiResponse<TResponse>> onCompleted,
+            ApiRequestOptions options)
         {
             var requestUrl = BuildUrl(relativePath);
 
@@ -84,7 +99,7 @@ namespace Game.Core.Application.Networking
                     request.SetRequestHeader("Content-Type", "application/json");
                 }
 
-                ApplyHeaders(request);
+                ApplyHeaders(request, options);
 
                 _userActionLogger.Log(
                     UserActionType.HttpRequest,
@@ -217,16 +232,41 @@ namespace Game.Core.Application.Networking
             return $"{_settings.BaseUrl.TrimEnd('/')}/{relativePath.TrimStart('/')}";
         }
 
-        private void ApplyHeaders(UnityWebRequest request)
+        private void ApplyHeaders(UnityWebRequest request, ApiRequestOptions options)
         {
             if (_settings.DefaultHeaders == null)
+            {
+                if (!string.IsNullOrWhiteSpace(options?.BearerToken))
+                {
+                    request.SetRequestHeader("Authorization", $"Bearer {options.BearerToken}");
+                }
+            }
+            else
+            {
+                foreach (var header in _settings.DefaultHeaders)
+                {
+                    if (header == null || string.IsNullOrWhiteSpace(header.Key))
+                    {
+                        continue;
+                    }
+
+                    request.SetRequestHeader(header.Key, header.Value ?? string.Empty);
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(options?.BearerToken))
+            {
+                request.SetRequestHeader("Authorization", $"Bearer {options.BearerToken}");
+            }
+
+            if (options?.Headers == null)
             {
                 return;
             }
 
-            foreach (var header in _settings.DefaultHeaders)
+            foreach (var header in options.Headers)
             {
-                if (header == null || string.IsNullOrWhiteSpace(header.Key))
+                if (string.IsNullOrWhiteSpace(header.Key))
                 {
                     continue;
                 }

@@ -8,6 +8,7 @@ namespace Game.Core.Application.State
         GameSessionSnapshot Current { get; }
         event Action<GameSessionSnapshot> Changed;
 
+        void LoadSession(GameSessionSnapshot snapshot);
         void ResetSession();
         void StartNewSession();
         void SetStage(GameFlowStage stage);

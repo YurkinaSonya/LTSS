@@ -1,17 +1,22 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.UI;
 using Game.Core;
 using Game.Core.Application;
 using Game.Core.Application.Logging;
 using Game.Core.Application.Navigation;
 using Game.Core.Application.Networking;
+using Game.Core.Application.Session;
 using Game.Core.Application.State;
 using Game.Core.Application.UI;
 using Zenject;
 
 public class UIController : MonoBehaviour, IInitializable, IDisposable
 {
+    private const string ScreenResourcePath = "UI/Screens";
+
     public ScreenController CurrentScreen => _currentScreen;
 
     [Header ("UI components")]
@@ -39,6 +44,7 @@ public class UIController : MonoBehaviour, IInitializable, IDisposable
         IPopupNavigationService popupNavigation,
         IApplicationNavigationService navigation,
         IGameSessionService gameSessionService,
+        ISessionCoordinator sessionCoordinator,
         IUserActionLogger userActionLogger,
         IAppLogger appLogger,
         IEventAggregator eventAggregator,
@@ -52,6 +58,7 @@ public class UIController : MonoBehaviour, IInitializable, IDisposable
             navigation,
             popupNavigation,
             gameSessionService,
+            sessionCoordinator,
             userActionLogger,
             appLogger,
             eventAggregator,
@@ -66,6 +73,8 @@ public class UIController : MonoBehaviour, IInitializable, IDisposable
             return;
         }
 
+        EnsureCanvasInfrastructure();
+        EnsureEventSystem();
         BuildScreenRegistry();
         popupController?.Initialize(_uiContext, _popupNavigation, _appLogger);
 
@@ -92,26 +101,121 @@ public class UIController : MonoBehaviour, IInitializable, IDisposable
     {
         _viewsByType.Clear();
 
-        if (_views == null)
+        RegisterViews(_views);
+
+        var resourcePrefabs = Resources.LoadAll<GameObject>(ScreenResourcePath);
+
+        if (resourcePrefabs == null)
         {
             return;
         }
 
-        foreach (var view in _views)
+        foreach (var prefab in resourcePrefabs)
         {
+            if (prefab == null)
+            {
+                continue;
+            }
+
+            var view = prefab.GetComponent<ScreenView>();
+
             if (view == null)
             {
                 continue;
             }
 
-            if (_viewsByType.ContainsKey(view.Type))
-            {
-                _appLogger?.Warning($"Duplicate screen registration detected for '{view.Type}'.");
-                continue;
-            }
-
-            _viewsByType.Add(view.Type, view);
+            RegisterView(view);
         }
+
+        _appLogger?.Info($"UI screen registry built. Registered screens: {_viewsByType.Count}.");
+    }
+
+    private void RegisterViews(ScreenView[] views)
+    {
+        if (views == null)
+        {
+            return;
+        }
+
+        foreach (var view in views)
+        {
+            RegisterView(view);
+        }
+    }
+
+    private void RegisterView(ScreenView view)
+    {
+        if (view == null)
+        {
+            return;
+        }
+
+        if (_viewsByType.ContainsKey(view.Type))
+        {
+            _appLogger?.Warning($"Duplicate screen registration detected for '{view.Type}'.");
+            return;
+        }
+
+        _viewsByType.Add(view.Type, view);
+    }
+
+    private void EnsureCanvasInfrastructure()
+    {
+        var rectTransform = transform as RectTransform;
+
+        if (rectTransform != null)
+        {
+            rectTransform.anchorMin = Vector2.zero;
+            rectTransform.anchorMax = Vector2.one;
+            rectTransform.offsetMin = Vector2.zero;
+            rectTransform.offsetMax = Vector2.zero;
+            rectTransform.localScale = Vector3.one;
+            rectTransform.localPosition = Vector3.zero;
+        }
+
+        var canvas = GetComponent<Canvas>();
+
+        if (canvas != null)
+        {
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.pixelPerfect = false;
+        }
+
+        var scaler = GetComponent<CanvasScaler>();
+
+        if (scaler == null)
+        {
+            scaler = gameObject.AddComponent<CanvasScaler>();
+        }
+
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920f, 1080f);
+        scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+        scaler.matchWidthOrHeight = 0.5f;
+
+        if (GetComponent<GraphicRaycaster>() == null)
+        {
+            gameObject.AddComponent<GraphicRaycaster>();
+        }
+    }
+
+    private void EnsureEventSystem()
+    {
+        if (EventSystem.current != null)
+        {
+            return;
+        }
+
+        var eventSystemObject = new GameObject("EventSystem");
+        var projectContext = GetComponentInParent<ProjectContext>();
+
+        if (projectContext != null)
+        {
+            eventSystemObject.transform.SetParent(projectContext.transform, false);
+        }
+
+        eventSystemObject.AddComponent<EventSystem>();
+        eventSystemObject.AddComponent<StandaloneInputModule>();
     }
 
     private void ApplyState(ApplicationStateSnapshot state)

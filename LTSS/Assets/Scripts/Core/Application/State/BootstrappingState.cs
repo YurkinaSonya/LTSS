@@ -21,12 +21,13 @@ namespace Game.Core.Application.State
                 gameFlowStage: GameFlowStage.Bootstrap,
                 gameFlowPhase: GameFlowPhase.Preparation,
                 isBusy: true,
+                statusMessage: "Initializing application...",
                 lastError: string.Empty));
         }
 
         public void Exit()
         {
-            _stateStore.SetState(state => state.With(isBusy: false));
+            _stateStore.SetState(state => state.With(isBusy: false, statusMessage: string.Empty));
         }
     }
 }

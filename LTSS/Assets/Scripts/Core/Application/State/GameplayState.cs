@@ -31,6 +31,7 @@ namespace Game.Core.Application.State
                 appStateId: StateId,
                 currentScreen: ScreenId.Gameplay,
                 isBusy: false,
+                statusMessage: string.Empty,
                 lastError: string.Empty));
         }
 

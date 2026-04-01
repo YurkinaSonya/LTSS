@@ -17,6 +17,7 @@ namespace Game.Core.Application.State
                 GameFlowPhase.None,
                 false,
                 string.Empty,
+                string.Empty,
                 null);
 
         public AppStateId AppStateId { get; }
@@ -24,6 +25,7 @@ namespace Game.Core.Application.State
         public GameFlowStage GameFlowStage { get; }
         public GameFlowPhase GameFlowPhase { get; }
         public bool IsBusy { get; }
+        public string StatusMessage { get; }
         public string LastError { get; }
         public int PopupCount => _popupStack.Count;
         public IReadOnlyList<PopupRoute> PopupStack => _popupStack;
@@ -34,6 +36,7 @@ namespace Game.Core.Application.State
             GameFlowStage gameFlowStage,
             GameFlowPhase gameFlowPhase,
             bool isBusy,
+            string statusMessage,
             string lastError,
             IEnumerable<PopupRoute> popupStack)
         {
@@ -42,6 +45,7 @@ namespace Game.Core.Application.State
             GameFlowStage = gameFlowStage;
             GameFlowPhase = gameFlowPhase;
             IsBusy = isBusy;
+            StatusMessage = statusMessage ?? string.Empty;
             LastError = lastError ?? string.Empty;
             _popupStack = popupStack != null
                 ? new List<PopupRoute>(popupStack)
@@ -54,6 +58,7 @@ namespace Game.Core.Application.State
             GameFlowStage? gameFlowStage = null,
             GameFlowPhase? gameFlowPhase = null,
             bool? isBusy = null,
+            string statusMessage = null,
             string lastError = null,
             IEnumerable<PopupRoute> popupStack = null)
         {
@@ -63,6 +68,7 @@ namespace Game.Core.Application.State
                 gameFlowStage ?? GameFlowStage,
                 gameFlowPhase ?? GameFlowPhase,
                 isBusy ?? IsBusy,
+                statusMessage ?? StatusMessage,
                 lastError ?? LastError,
                 popupStack ?? _popupStack);
         }

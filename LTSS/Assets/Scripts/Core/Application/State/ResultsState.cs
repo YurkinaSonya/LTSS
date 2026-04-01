@@ -26,7 +26,8 @@ namespace Game.Core.Application.State
                 currentScreen: ScreenId.Results,
                 gameFlowStage: GameFlowStage.Results,
                 gameFlowPhase: GameFlowPhase.Summary,
-                isBusy: false));
+                isBusy: false,
+                statusMessage: string.Empty));
         }
 
         public void Exit()

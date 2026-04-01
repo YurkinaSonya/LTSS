@@ -30,6 +30,11 @@ namespace Game.Core.Application.Navigation
             _stateMachine.MoveTo(stateId);
         }
 
+        public void GoToLogin(string reason = null)
+        {
+            MoveTo(AppStateId.Login, reason);
+        }
+
         public void GoToMainMenu(string reason = null)
         {
             MoveTo(AppStateId.MainMenu, reason);
@@ -38,6 +43,11 @@ namespace Game.Core.Application.Navigation
         public void StartGameplay(string reason = null)
         {
             MoveTo(AppStateId.Gameplay, reason);
+        }
+
+        public void ShowSessionReady(string reason = null)
+        {
+            MoveTo(AppStateId.SessionReady, reason);
         }
 
         public void ShowResults(string reason = null)
@@ -50,7 +60,7 @@ namespace Game.Core.Application.Navigation
             _stateStore.SetState(state => state.With(
                 lastError: message ?? "Unknown error"));
 
-            MoveTo(AppStateId.Error, reason);
+            MoveTo(AppStateId.FatalError, reason);
         }
 
         private void LogNavigation(AppStateId stateId, string reason)

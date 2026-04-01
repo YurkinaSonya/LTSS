@@ -27,7 +27,7 @@ namespace Game.Core.Application.State
                 gameFlowStage: GameFlowStage.MainMenu,
                 gameFlowPhase: GameFlowPhase.Idle,
                 isBusy: false,
-                lastError: string.Empty));
+                statusMessage: string.Empty));
         }
 
         public void Exit()

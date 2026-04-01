@@ -1,4 +1,5 @@
 using Game.Core.Application.Logging;
+using Game.Core.Application.Session;
 using Game.Core.Application.State;
 using Game.Domain.GameFlow;
 
@@ -42,6 +43,16 @@ namespace Game.Core.Events
             public GameSessionChangedEvent(GameSessionSnapshot session)
             {
                 Session = session;
+            }
+        }
+
+        public sealed class ClientRuntimeStateChangedEvent
+        {
+            public ClientRuntimeState RuntimeState { get; }
+
+            public ClientRuntimeStateChangedEvent(ClientRuntimeState runtimeState)
+            {
+                RuntimeState = runtimeState;
             }
         }
 

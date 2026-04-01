@@ -26,6 +26,7 @@ public class PopupController : MonoBehaviour
         IPopupNavigationService popupNavigation,
         IAppLogger logger)
     {
+        EnsureCanvasInfrastructure();
         _uiContext = uiContext;
         _popupNavigation = popupNavigation;
         _logger = logger;
@@ -43,6 +44,43 @@ public class PopupController : MonoBehaviour
 
         HidePopupContainer();
         _isInitialized = true;
+    }
+
+    private void EnsureCanvasInfrastructure()
+    {
+        var rectTransform = transform as RectTransform;
+
+        if (rectTransform != null)
+        {
+            rectTransform.anchorMin = Vector2.zero;
+            rectTransform.anchorMax = Vector2.one;
+            rectTransform.offsetMin = Vector2.zero;
+            rectTransform.offsetMax = Vector2.zero;
+        }
+
+        var canvas = GetComponent<Canvas>();
+
+        if (canvas != null)
+        {
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        }
+
+        var scaler = GetComponent<CanvasScaler>();
+
+        if (scaler == null)
+        {
+            scaler = gameObject.AddComponent<CanvasScaler>();
+        }
+
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920f, 1080f);
+        scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+        scaler.matchWidthOrHeight = 0.5f;
+
+        if (GetComponent<GraphicRaycaster>() == null)
+        {
+            gameObject.AddComponent<GraphicRaycaster>();
+        }
     }
 
     public void ApplyPopupStack(IReadOnlyList<PopupRoute> popupStack)

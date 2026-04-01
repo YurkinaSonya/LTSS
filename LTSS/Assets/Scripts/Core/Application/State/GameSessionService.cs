@@ -34,14 +34,25 @@ namespace Game.Core.Application.State
             Publish();
         }
 
+        public void LoadSession(GameSessionSnapshot snapshot)
+        {
+            if (snapshot == null)
+            {
+                return;
+            }
+
+            _current = snapshot;
+            Publish();
+        }
+
         public void StartNewSession()
         {
-            _current = new GameSessionSnapshot(
+            LoadSession(new GameSessionSnapshot(
                 Guid.NewGuid().ToString("N"),
                 true,
                 GameFlowStage.Gameplay,
                 GameFlowPhase.Preparation,
-                new GameMetricBag());
+                new GameMetricBag()));
 
             _userActionLogger.Log(
                 UserActionType.SessionLifecycle,
@@ -51,7 +62,6 @@ namespace Game.Core.Application.State
                     { "sessionId", _current.SessionId }
                 });
 
-            Publish();
         }
 
         public void SetStage(GameFlowStage stage)

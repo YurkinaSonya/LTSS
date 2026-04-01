@@ -7,6 +7,11 @@ namespace Game.Core.Application
         MainMenu,
         Gameplay,
         Results,
-        Error
+        Error,
+        Login,
+        Authenticating,
+        LoadingSession,
+        SessionReady,
+        FatalError
     }
 }

@@ -16,7 +16,8 @@ namespace Game.Core.Application.State
             _stateStore.SetState(state => state.With(
                 appStateId: StateId,
                 currentScreen: ScreenId.Error,
-                isBusy: false));
+                isBusy: false,
+                statusMessage: string.Empty));
         }
 
         public void Exit()

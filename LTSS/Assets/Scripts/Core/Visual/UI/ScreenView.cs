@@ -14,6 +14,24 @@ public class ScreenView : MonoBehaviour
 
     private float _alpha;
 
+    protected virtual void Awake()
+    {
+        if (_canvasGroup == null)
+        {
+            _canvasGroup = GetComponent<CanvasGroup>();
+        }
+
+        var rectTransform = transform as RectTransform;
+
+        if (rectTransform != null)
+        {
+            rectTransform.anchorMin = Vector2.zero;
+            rectTransform.anchorMax = Vector2.one;
+            rectTransform.offsetMin = Vector2.zero;
+            rectTransform.offsetMax = Vector2.zero;
+            rectTransform.localScale = Vector3.one;
+        }
+    }
 
     public virtual ScreenController Construct(UIContext context)
     {
