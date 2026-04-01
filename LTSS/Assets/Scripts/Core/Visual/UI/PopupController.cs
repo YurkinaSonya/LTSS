@@ -9,6 +9,7 @@ using Game.Core.Application.UI;
 public class PopupController : MonoBehaviour
 {  
     private const string PopupResourcePath = "UI/Popups";
+    private const int PopupCanvasSortingOrder = 100;
 
     [SerializeField] private CanvasGroup _popupCanvas;
     [SerializeField] protected Button _backBGButton;
@@ -68,6 +69,9 @@ public class PopupController : MonoBehaviour
         if (canvas != null)
         {
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.overrideSorting = true;
+            canvas.sortingOrder = PopupCanvasSortingOrder;
+            canvas.pixelPerfect = false;
         }
 
         var scaler = GetComponent<CanvasScaler>();
@@ -269,7 +273,10 @@ public class PopupController : MonoBehaviour
         if (_popupLayouts.Count == 0)
         {
             HidePopupContainer();
+            return;
         }
+
+        Canvas.ForceUpdateCanvases();
     }
 
     private void CloseAllCurrentPopups()

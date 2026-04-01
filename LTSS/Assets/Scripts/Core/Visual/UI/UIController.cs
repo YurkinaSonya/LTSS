@@ -17,6 +17,7 @@ using Zenject;
 public class UIController : MonoBehaviour, IInitializable, IDisposable
 {
     private const string ScreenResourcePath = "UI/Screens";
+    private const int MainCanvasSortingOrder = 0;
 
     public ScreenController CurrentScreen => _currentScreen;
 
@@ -181,6 +182,8 @@ public class UIController : MonoBehaviour, IInitializable, IDisposable
         if (canvas != null)
         {
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.overrideSorting = true;
+            canvas.sortingOrder = MainCanvasSortingOrder;
             canvas.pixelPerfect = false;
         }
 
