@@ -229,6 +229,9 @@ public static class RuntimeUiFactory
         var input = fieldRect.gameObject.AddComponent<InputField>();
         input.targetGraphic = image;
         input.lineType = InputField.LineType.SingleLine;
+        input.customCaretColor = true;
+        input.caretColor = TextPrimaryColor;
+        input.selectionColor = new Color(PrimaryColor.r, PrimaryColor.g, PrimaryColor.b, 0.25f);
         input.contentType = isPassword
             ? InputField.ContentType.Password
             : InputField.ContentType.Standard;
@@ -242,7 +245,7 @@ public static class RuntimeUiFactory
         textComponent.color = TextPrimaryColor;
         textComponent.alignment = TextAnchor.MiddleLeft;
         textComponent.supportRichText = false;
-        textComponent.horizontalOverflow = HorizontalWrapMode.Wrap;
+        textComponent.horizontalOverflow = HorizontalWrapMode.Overflow;
         textComponent.verticalOverflow = VerticalWrapMode.Truncate;
         textComponent.raycastTarget = false;
 
@@ -260,7 +263,7 @@ public static class RuntimeUiFactory
         placeholderText.alignment = TextAnchor.MiddleLeft;
         placeholderText.text = placeholder;
         placeholderText.supportRichText = false;
-        placeholderText.horizontalOverflow = HorizontalWrapMode.Wrap;
+        placeholderText.horizontalOverflow = HorizontalWrapMode.Overflow;
         placeholderText.verticalOverflow = VerticalWrapMode.Truncate;
         placeholderText.raycastTarget = false;
 

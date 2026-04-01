@@ -10,6 +10,8 @@ namespace Game.Core.Application.Session
         void RestoreIfPossible(AppStateId fallbackState = AppStateId.Login);
         void Login(string login, string password);
         void LoadBootstrap();
+        void UpdateLocalRunProgress(int currentPeriodNumber, RunLifecycleStatus runStatus);
+        void CompleteRunLocally(string statusMessage = null, string reason = null);
         void ClearSession(string reason = null);
     }
 }

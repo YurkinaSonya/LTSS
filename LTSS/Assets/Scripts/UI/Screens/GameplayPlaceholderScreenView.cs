@@ -14,6 +14,8 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         public string ExpenseId;
         public Text TitleLabel;
         public Text MetaLabel;
+        public GameObject RequiredBadge;
+        public Text RequiredBadgeLabel;
         public InputField AmountInput;
         public Button SourceButton;
     }
@@ -288,16 +290,23 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
                 ? RuntimeUiFactory.PrimaryColor
                 : RuntimeUiFactory.TextSecondaryColor;
 
+            if (widgets.RequiredBadge != null)
+            {
+                var showRequiredBadge = expenseDefinition.IsRequired && expenseDefinition.MinimumAmount > 0d;
+                widgets.RequiredBadge.SetActive(showRequiredBadge);
+
+                if (showRequiredBadge && widgets.RequiredBadgeLabel != null)
+                {
+                    widgets.RequiredBadgeLabel.text = $"мин. {FormatMoney(expenseDefinition.MinimumAmount)}";
+                }
+            }
+
             var amountText = expenseState != null && expenseState.Amount > 0d
                 ? expenseState.Amount.ToString("0.##", CultureInfo.InvariantCulture)
                 : string.Empty;
 
             widgets.AmountInput.onValueChanged.RemoveAllListeners();
-
-            if (widgets.AmountInput.text != amountText)
-            {
-                widgets.AmountInput.text = amountText;
-            }
+            SyncInputFieldText(widgets.AmountInput, amountText);
 
             widgets.AmountInput.onValueChanged.AddListener(value => onExpenseAmountChanged?.Invoke(expenseDefinition.Id, value));
             widgets.AmountInput.interactable = canEdit;
@@ -329,7 +338,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
 
             widgets.TitleLabel.text = asset.Title;
             widgets.ValueLabel.text = FormatMoney(asset.CurrentAmount);
-            widgets.CaptionLabel.text = $"Старт: {FormatMoney(asset.InitialAmount)}";
+            widgets.CaptionLabel.text = $"На начало периода: {FormatMoney(asset.InitialAmount)}";
 
             widgets.DepositButton.gameObject.SetActive(asset.AllowsDeposit);
             widgets.WithdrawButton.gameObject.SetActive(asset.AllowsWithdraw);
@@ -412,11 +421,29 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
             AddLayoutElement(textColumn.gameObject, flexibleWidth: 1f, preferredWidth: 360f);
             var title = RuntimeUiFactory.CreateBodyText(textColumn, string.Empty);
             title.fontStyle = FontStyle.Bold;
-            var meta = RuntimeUiFactory.CreateCaption(textColumn, string.Empty);
+            var metaRow = CreateRow(textColumn, "MetaRow", 8f, TextAnchor.MiddleLeft);
+            var meta = RuntimeUiFactory.CreateCaption(metaRow, string.Empty);
+            var requiredBadge = RuntimeUiFactory.CreateSurface("RequiredBadge", metaRow, RuntimeUiFactory.PrimarySoftColor, false);
+            var requiredBadgeLayout = requiredBadge.gameObject.AddComponent<HorizontalLayoutGroup>();
+            requiredBadgeLayout.padding = new RectOffset(8, 8, 1, 1);
+            requiredBadgeLayout.spacing = 0f;
+            requiredBadgeLayout.childAlignment = TextAnchor.MiddleCenter;
+            requiredBadgeLayout.childControlWidth = false;
+            requiredBadgeLayout.childControlHeight = true;
+            requiredBadgeLayout.childForceExpandWidth = false;
+            requiredBadgeLayout.childForceExpandHeight = false;
+            AddLayoutElement(requiredBadge.gameObject, preferredHeight: 20f);
+            var requiredBadgeFitter = requiredBadge.gameObject.AddComponent<ContentSizeFitter>();
+            requiredBadgeFitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+            requiredBadgeFitter.verticalFit = ContentSizeFitter.FitMode.Unconstrained;
+            var requiredLabel = RuntimeUiFactory.CreateCaption(requiredBadge, string.Empty, TextAnchor.MiddleCenter);
+            requiredLabel.fontSize = 12;
+            requiredLabel.color = RuntimeUiFactory.PrimaryColor;
+            requiredBadge.gameObject.SetActive(false);
 
             var amountField = RuntimeUiFactory.CreateInputField(row, "0");
             amountField.contentType = InputField.ContentType.DecimalNumber;
-            AddLayoutElement(amountField.gameObject, preferredWidth: 160f);
+            AddLayoutElement(amountField.gameObject, minimumHeight: 22f, preferredWidth: 160f);
 
             var sourceButton = RuntimeUiFactory.CreateSecondaryButton(row, "Источник", 46f);
             AddLayoutElement(sourceButton.gameObject, preferredWidth: 180f);
@@ -426,6 +453,8 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
                 ExpenseId = definition.Id,
                 TitleLabel = title,
                 MetaLabel = meta,
+                RequiredBadge = requiredBadge.gameObject,
+                RequiredBadgeLabel = requiredLabel,
                 AmountInput = amountField,
                 SourceButton = sourceButton
             };
@@ -702,6 +731,8 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
 
     private static void AddLayoutElement(
         GameObject target,
+        float minimumWidth = -1f,
+        float minimumHeight = -1f,
         float preferredWidth = -1f,
         float preferredHeight = -1f,
         float flexibleWidth = -1f,
@@ -722,6 +753,16 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         if (preferredHeight >= 0f)
         {
             layoutElement.preferredHeight = preferredHeight;
+        }
+
+        if (minimumWidth >= 0f)
+        {
+            layoutElement.minWidth = minimumWidth;
+        }
+
+        if (minimumHeight >= 0f)
+        {
+            layoutElement.minHeight = minimumHeight;
         }
 
         if (flexibleWidth >= 0f)
@@ -755,6 +796,44 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         if (callback != null)
         {
             button.onClick.AddListener(() => callback.Invoke());
+        }
+    }
+
+    private static void SyncInputFieldText(InputField inputField, string value)
+    {
+        if (inputField == null)
+        {
+            return;
+        }
+
+        var safeValue = value ?? string.Empty;
+
+        if (inputField.text != safeValue)
+        {
+            inputField.text = safeValue;
+        }
+
+        if (inputField.textComponent != null)
+        {
+            inputField.textComponent.gameObject.SetActive(true);
+            inputField.textComponent.text = safeValue;
+            inputField.textComponent.color = RuntimeUiFactory.TextPrimaryColor;
+            inputField.textComponent.enabled = true;
+        }
+
+        if (inputField.placeholder is Graphic placeholderGraphic)
+        {
+            placeholderGraphic.gameObject.SetActive(true);
+            placeholderGraphic.enabled = string.IsNullOrWhiteSpace(safeValue);
+        }
+
+        inputField.ForceLabelUpdate();
+
+        var rectTransform = inputField.transform as RectTransform;
+
+        if (rectTransform != null)
+        {
+            LayoutRebuilder.ForceRebuildLayoutImmediate(rectTransform);
         }
     }
 }

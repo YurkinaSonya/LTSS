@@ -212,6 +212,67 @@ namespace Game.Core.Application.Session
             LoadBootstrapInternal(allowSnapshotFallback: true, loginFallbackState: AppStateId.Login, reason: "manual");
         }
 
+        public void UpdateLocalRunProgress(int currentPeriodNumber, RunLifecycleStatus runStatus)
+        {
+            if (!_currentRuntime.HasSession || currentPeriodNumber <= 0)
+            {
+                return;
+            }
+
+            var nextRunStatus = runStatus != RunLifecycleStatus.Unknown
+                ? runStatus
+                : _currentRunInfo.RunStatus;
+            var nextRunInfo = new AuthenticatedRunInfo(
+                _currentRunInfo.RunId,
+                _currentRunInfo.SessionDefinitionCode,
+                nextRunStatus,
+                currentPeriodNumber,
+                _currentRunInfo.AssignedGroupCode);
+            var bootstrapRun = _currentRuntime.Bootstrap != null
+                ? _currentRuntime.Bootstrap.Run
+                : null;
+            var nextBootstrapRun = new BootstrapRunRuntimeModel(
+                bootstrapRun != null ? bootstrapRun.RunId : nextRunInfo.RunId,
+                nextRunStatus,
+                currentPeriodNumber,
+                bootstrapRun != null ? bootstrapRun.BootstrapVersion : 0,
+                bootstrapRun != null ? bootstrapRun.StartedAtRaw : string.Empty,
+                bootstrapRun != null ? bootstrapRun.FinishedAtRaw : string.Empty,
+                bootstrapRun != null ? bootstrapRun.LastCheckpointAtRaw : string.Empty);
+            var nextBootstrap = new BootstrapPayload(
+                nextBootstrapRun,
+                _currentRuntime.Bootstrap != null ? _currentRuntime.Bootstrap.Session : null,
+                _currentRuntime.Bootstrap != null ? _currentRuntime.Bootstrap.Participant : null,
+                _currentRuntime.Bootstrap != null ? _currentRuntime.Bootstrap.SurveyTemplates : null);
+            var nextRuntime = new ClientRuntimeState(
+                _currentRuntime.AuthToken,
+                nextRunInfo,
+                nextBootstrap,
+                _currentRuntime.CanRestore);
+
+            _persistenceService.SaveAuthContext(nextRuntime.AuthToken, nextRunInfo);
+            PublishRuntime(nextRuntime);
+        }
+
+        public void CompleteRunLocally(string statusMessage = null, string reason = null)
+        {
+            if (!_currentRuntime.HasSession)
+            {
+                return;
+            }
+
+            var completedPeriodNumber = _currentRunInfo.CurrentPeriodNumber > 0
+                ? _currentRunInfo.CurrentPeriodNumber
+                : _currentRuntime.Bootstrap.Run.CurrentPeriodNumber;
+            UpdateLocalRunProgress(completedPeriodNumber, RunLifecycleStatus.Completed);
+            _navigation.ShowSessionReady(reason ?? "run_completed");
+            _stateStore.SetState(state => state.With(
+                statusMessage: string.IsNullOrWhiteSpace(statusMessage)
+                    ? "Все периоды завершены. Далее будет пост-экспериментальный этап."
+                    : statusMessage,
+                lastError: string.Empty));
+        }
+
         public void ClearSession(string reason = null)
         {
             _isBusy = false;

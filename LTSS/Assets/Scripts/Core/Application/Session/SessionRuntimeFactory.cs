@@ -53,10 +53,24 @@ namespace Game.Core.Application.Session
                 return false;
             }
 
+            var responseRunStatus = SessionContractMapper.ToRunStatus(response.run?.runStatus);
+            var effectiveCurrentPeriodNumber = Math.Max(
+                response.run?.currentPeriodNumber ?? 0,
+                runInfo?.CurrentPeriodNumber ?? 0);
+            var effectiveRunStatus = runInfo != null && runInfo.RunStatus != RunLifecycleStatus.Unknown
+                ? runInfo.RunStatus
+                : responseRunStatus;
+
+            if (responseRunStatus == RunLifecycleStatus.Completed
+                || responseRunStatus == RunLifecycleStatus.Aborted)
+            {
+                effectiveRunStatus = responseRunStatus;
+            }
+
             var bootstrapRun = new BootstrapRunRuntimeModel(
                 effectiveRunId,
-                SessionContractMapper.ToRunStatus(response.run?.runStatus),
-                response.run?.currentPeriodNumber ?? runInfo?.CurrentPeriodNumber ?? 0,
+                effectiveRunStatus,
+                effectiveCurrentPeriodNumber,
                 response.run?.bootstrapVersion ?? 0,
                 response.run?.startedAt,
                 response.run?.finishedAt,

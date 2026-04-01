@@ -30,7 +30,7 @@ namespace Game.Core.Application.Periods
             var cashBalance = definition.InitialCashBalance;
             var depositBalance = definition.InitialDepositBalance;
 
-            foreach (var expenseState in safeExpenses)
+            foreach (var expenseState in safeExpenses) 
             {
                 if (expenseState == null || expenseState.Amount <= 0d)
                 {
@@ -191,16 +191,6 @@ namespace Game.Core.Application.Periods
                 issues.Add(new PeriodValidationIssue(
                     "required_expense_missing",
                     $"Заполните обязательную статью «{expenseDefinition.Title}».",
-                    expenseDefinition.Id,
-                    true));
-            }
-
-            if (expenseDefinition.MaximumAmount > 0d
-                && amount > expenseDefinition.MaximumAmount + definition.ValidationSettings.CompletionRemainderTolerance)
-            {
-                issues.Add(new PeriodValidationIssue(
-                    "expense_limit_exceeded",
-                    $"Статья «{expenseDefinition.Title}» превышает допустимый лимит.",
                     expenseDefinition.Id,
                     true));
             }

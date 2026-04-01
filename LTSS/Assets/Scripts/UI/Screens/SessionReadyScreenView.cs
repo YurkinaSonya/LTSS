@@ -13,6 +13,7 @@ public sealed class SessionReadyScreenView : ScreenView
     private Text _runLabel;
     private Text _surveyLabel;
     private Text _configLabel;
+    private Text _statusLabel;
     private Button _continueButton;
     private Button _logoutButton;
     private bool _isBuilt;
@@ -35,7 +36,11 @@ public sealed class SessionReadyScreenView : ScreenView
         BindButton(_logoutButton, callback);
     }
 
-    public void ApplyRuntime(ClientRuntimeState runtimeState)
+    public void ApplyRuntime(
+        ClientRuntimeState runtimeState,
+        string statusMessage,
+        bool canContinue,
+        string continueButtonText)
     {
         EnsureBuilt();
 
@@ -47,6 +52,10 @@ public sealed class SessionReadyScreenView : ScreenView
             SetText(_runLabel, string.Empty);
             SetText(_surveyLabel, string.Empty);
             SetText(_configLabel, string.Empty);
+            SetText(_statusLabel, statusMessage);
+            _statusLabel.gameObject.SetActive(!string.IsNullOrWhiteSpace(statusMessage));
+            _continueButton.interactable = false;
+            RuntimeUiFactory.SetButtonText(_continueButton, continueButtonText);
             return;
         }
 
@@ -85,6 +94,10 @@ public sealed class SessionReadyScreenView : ScreenView
             _configLabel,
             $"Конфиг v{session.ConfigVersion}  |  Сессия: {session.SessionConfig.Summary}  |  " +
             $"Группа: {participant.AssignedConfig.Summary}  |  Этапов: {periodSummary}");
+        SetText(_statusLabel, statusMessage);
+        _statusLabel.gameObject.SetActive(!string.IsNullOrWhiteSpace(statusMessage));
+        _continueButton.interactable = canContinue;
+        RuntimeUiFactory.SetButtonText(_continueButton, continueButtonText);
     }
 
     private void EnsureBuilt()
@@ -112,6 +125,9 @@ public sealed class SessionReadyScreenView : ScreenView
         _runLabel = RuntimeUiFactory.CreateBodyText(content, string.Empty);
         _surveyLabel = RuntimeUiFactory.CreateBodyText(content, string.Empty);
         _configLabel = RuntimeUiFactory.CreateCaption(content, string.Empty);
+        _statusLabel = RuntimeUiFactory.CreateBodyText(content, string.Empty);
+        _statusLabel.color = RuntimeUiFactory.PrimaryColor;
+        _statusLabel.gameObject.SetActive(false);
         RuntimeUiFactory.AddSpacer(content, 14f);
 
         var buttonRow = RuntimeUiFactory.CreateRow("Buttons", content, 12f, TextAnchor.MiddleCenter);

@@ -24,11 +24,16 @@ public sealed class AssetOperationPopup : Popup
     {
         EnsureBuilt();
         BindButtons();
+        Debug.Log("[AssetPopupDebug] OnInitialize completed. Buttons bound.");
 
         if (Context.PeriodGameplay != null)
         {
             Context.PeriodGameplay.Changed += ApplyRuntime;
             ApplyRuntime(Context.PeriodGameplay.Current);
+        }
+        else
+        {
+            SetMessage("Диалог актива временно недоступен.");
         }
     }
 
@@ -44,9 +49,64 @@ public sealed class AssetOperationPopup : Popup
 
     private void BindButtons()
     {
-        BindButton(_cancelButton, () => Context.Popups?.Pop("asset_popup_cancel"));
-        BindButton(_confirmButton, () => Context.PeriodGameplay?.SubmitAssetDialog(_amountInput != null ? _amountInput.text : string.Empty));
-        BindButton(_sourceButton, () => Context.PeriodGameplay?.CycleAssetDialogSource());
+        BindButton(_cancelButton, HandleCancel);
+        BindButton(_confirmButton, HandleConfirm);
+        BindButton(_sourceButton, HandleChangeSource);
+    }
+
+    private void HandleCancel()
+    {
+        Context.Popups?.Pop("asset_popup_cancel");
+    }
+
+    private void HandleConfirm()
+    {
+        Debug.Log($"[AssetPopupDebug] HandleConfirm invoked. RawAmount='{ReadAmountText()}'.");
+
+        if (Context.PeriodGameplay == null)
+        {
+            Debug.Log("[AssetPopupDebug] HandleConfirm aborted. PeriodGameplay is null.");
+            SetMessage("Сервис периода недоступен.");
+            return;
+        }
+
+        var beforeRuntime = Context.PeriodGameplay.Current;
+        var beforeOperationCount = beforeRuntime != null && beforeRuntime.AssetOperations != null
+            ? beforeRuntime.AssetOperations.Count
+            : 0;
+
+        Debug.Log($"[AssetPopupDebug] Before submit. OperationCount={beforeOperationCount}, DialogOpen={(beforeRuntime != null && beforeRuntime.AssetDialog != null && beforeRuntime.AssetDialog.IsOpen)}.");
+        Context.PeriodGameplay.SubmitAssetDialog(ReadAmountText());
+
+        var afterRuntime = Context.PeriodGameplay.Current;
+        Debug.Log($"[AssetPopupDebug] After submit. OperationCount={(afterRuntime != null && afterRuntime.AssetOperations != null ? afterRuntime.AssetOperations.Count : 0)}, DialogOpen={(afterRuntime != null && afterRuntime.AssetDialog != null && afterRuntime.AssetDialog.IsOpen)}, Status='{(afterRuntime != null ? afterRuntime.StatusMessage : string.Empty)}'.");
+        ApplyRuntime(afterRuntime);
+
+        var wasApplied = afterRuntime != null
+                         && ((afterRuntime.AssetOperations != null && afterRuntime.AssetOperations.Count > beforeOperationCount)
+                             || !afterRuntime.AssetDialog.IsOpen);
+
+        if (wasApplied)
+        {
+            Debug.Log("[AssetPopupDebug] Operation applied. Closing popup.");
+            ClosePopupIfStillOpen();
+        }
+        else
+        {
+            Debug.Log("[AssetPopupDebug] Operation was not applied.");
+        }
+    }
+
+    private void HandleChangeSource()
+    {
+        if (Context.PeriodGameplay == null)
+        {
+            SetMessage("Невозможно переключить источник.");
+            return;
+        }
+
+        Context.PeriodGameplay.CycleAssetDialogSource();
+        ApplyRuntime(Context.PeriodGameplay.Current);
     }
 
     private void ApplyRuntime(PeriodRuntimeState runtimeState)
@@ -65,20 +125,27 @@ public sealed class AssetOperationPopup : Popup
 
         _titleLabel.text = dialog.Title;
         _subtitleLabel.text = dialog.Subtitle;
-        _sourceLabel.text = PeriodContractMapper.ToFundsSourceLabel(dialog.SelectedSource);
-        _sourceButton.gameObject.SetActive(dialog.AllowedSources != null && dialog.AllowedSources.Count > 1);
+        _sourceLabel.text = $"Источник: {PeriodContractMapper.ToFundsSourceLabel(dialog.SelectedSource)}";
+
+        if (_sourceButton != null)
+        {
+            var canChangeSource = dialog.AllowedSources != null && dialog.AllowedSources.Count > 1;
+            _sourceButton.gameObject.SetActive(canChangeSource);
+            _sourceButton.interactable = canChangeSource;
+        }
+
         _limitLabel.text = $"Доступно: {dialog.MaxAmount.ToString("0.##")} ₽";
-        _messageLabel.text = runtimeState.StatusMessage;
-        _messageLabel.gameObject.SetActive(!string.IsNullOrWhiteSpace(_messageLabel.text));
+        SetMessage(runtimeState.StatusMessage);
 
         if (_amountInput != null && string.IsNullOrWhiteSpace(_amountInput.text) && dialog.SuggestedAmount > 0d)
         {
             _amountInput.text = dialog.SuggestedAmount.ToString("0.##");
+            _amountInput.ForceLabelUpdate();
         }
 
         if (_confirmButton != null)
         {
-            _confirmButton.interactable = dialog.MaxAmount > 0d;
+            _confirmButton.interactable = true;
         }
     }
 
@@ -113,7 +180,7 @@ public sealed class AssetOperationPopup : Popup
         sourceLayout.childForceExpandHeight = false;
         _sourceLabel = RuntimeUiFactory.CreateBodyText(sourcePanel, string.Empty);
         RuntimeUiFactory.AddFlexibleSpacer(sourcePanel);
-        _sourceButton = RuntimeUiFactory.CreateSecondaryButton(sourcePanel, "Сменить", 42f);
+        _sourceButton = RuntimeUiFactory.CreateSecondaryButton(sourcePanel, "Сменить источник", 42f);
 
         _amountInput = RuntimeUiFactory.CreateInputField(content, "Сумма");
         _amountInput.contentType = InputField.ContentType.DecimalNumber;
@@ -124,6 +191,63 @@ public sealed class AssetOperationPopup : Popup
         var actions = RuntimeUiFactory.CreateRow("Actions", content, 12f, TextAnchor.MiddleCenter);
         _cancelButton = RuntimeUiFactory.CreateSecondaryButton(actions, "Отмена", 46f);
         _confirmButton = RuntimeUiFactory.CreatePrimaryButton(actions, "Подтвердить", 46f);
+    }
+
+    private string ReadAmountText()
+    {
+        if (_amountInput == null)
+        {
+            return string.Empty;
+        }
+
+        var text = _amountInput.text;
+
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            return text;
+        }
+
+        if (_amountInput.textComponent != null && !string.IsNullOrWhiteSpace(_amountInput.textComponent.text))
+        {
+            return _amountInput.textComponent.text;
+        }
+
+        return string.Empty;
+    }
+
+    private void SetMessage(string message)
+    {
+        if (_messageLabel == null)
+        {
+            return;
+        }
+
+        _messageLabel.text = message ?? string.Empty;
+        _messageLabel.gameObject.SetActive(!string.IsNullOrWhiteSpace(_messageLabel.text));
+    }
+
+    private void ClosePopupIfStillOpen()
+    {
+        if (Context == null || Context.StateStore == null || Context.Popups == null)
+        {
+            return;
+        }
+
+        var popupStack = Context.StateStore.Current != null
+            ? Context.StateStore.Current.PopupStack
+            : null;
+
+        if (popupStack == null || popupStack.Count == 0)
+        {
+            return;
+        }
+
+        var topPopup = popupStack[popupStack.Count - 1];
+
+        if (topPopup != null && topPopup.Type == PopupType)
+        {
+            Context.Popups.Pop("asset_popup_confirm");
+        }
     }
 
     private static void BindButton(Button button, Action callback)

@@ -8,6 +8,7 @@ using Game.Core.Application.Session;
 using Game.Core.Application.State;
 using Game.Core.Events;
 using Game.Domain.GameFlow;
+using UnityEngine;
 
 namespace Game.Core.Application.Periods
 {
@@ -168,6 +169,19 @@ namespace Game.Core.Application.Periods
                 return;
             }
 
+            var currentExpenseState = FindExpenseState(expenseId);
+
+            if (currentExpenseState == null)
+            {
+                return;
+            }
+
+            if (!CanAssignExpenseAmount(currentExpenseState, currentExpenseState.Source, amount, out var amountValidationMessage))
+            {
+                RejectExpenseMutation(amountValidationMessage);
+                return;
+            }
+
             var nextExpenses = new List<PeriodExpenseState>(_current.Expenses.Count);
             var hasChanges = false;
 
@@ -245,7 +259,15 @@ namespace Game.Core.Application.Periods
                 }
 
                 var nextIndex = (currentIndex + 1) % definition.AllowedSources.Count;
-                nextExpenses.Add(expenseState.With(source: definition.AllowedSources[nextIndex]));
+                var nextSource = definition.AllowedSources[nextIndex];
+
+                if (!CanAssignExpenseAmount(expenseState, nextSource, expenseState.Amount, out var sourceValidationMessage))
+                {
+                    RejectExpenseMutation(sourceValidationMessage);
+                    return;
+                }
+
+                nextExpenses.Add(expenseState.With(source: nextSource));
             }
 
             ApplyMutation(
@@ -272,11 +294,11 @@ namespace Game.Core.Application.Periods
                 return;
             }
 
+            _popupNavigation?.Push(Enums.PopupType.AssetOperation, "asset_operation_open");
             Publish(_current.With(
                 assetDialog: dialog,
                 statusMessage: string.Empty,
                 lastError: string.Empty));
-            _popupNavigation?.Push(Enums.PopupType.AssetOperation, "asset_operation_open");
         }
 
         public void CycleAssetDialogSource()
@@ -318,19 +340,34 @@ namespace Game.Core.Application.Periods
 
         public void SubmitAssetDialog(string rawAmount)
         {
+            Debug.Log($"[PeriodDebug] SubmitAssetDialog called. RawAmount='{rawAmount}'.");
+
             if (_current == null || !_current.AssetDialog.IsOpen)
             {
+                Debug.Log("[PeriodDebug] SubmitAssetDialog aborted. Current runtime is null or asset dialog is closed.");
+                return;
+            }
+
+            Debug.Log(
+                $"[PeriodDebug] Dialog state. Asset='{_current.AssetDialog.AssetId}', Kind='{_current.AssetDialog.Kind}', Source='{_current.AssetDialog.SelectedSource}', MaxAmount={_current.AssetDialog.MaxAmount}, ExistingOperations={(_current.AssetOperations != null ? _current.AssetOperations.Count : 0)}.");
+
+            if (_current.AssetDialog.MaxAmount <= 0.01d)
+            {
+                Debug.Log("[PeriodDebug] SubmitAssetDialog blocked. MaxAmount <= 0.");
+                Publish(_current.With(statusMessage: "Сейчас нет доступных средств для этой операции."));
                 return;
             }
 
             if (!TryParseAmount(rawAmount, out var amount) || amount <= 0d)
             {
+                Debug.Log($"[PeriodDebug] SubmitAssetDialog blocked. Parsed amount is invalid: {amount}.");
                 Publish(_current.With(statusMessage: "Введите корректную сумму."));
                 return;
             }
 
             if (amount > _current.AssetDialog.MaxAmount + 0.01d)
             {
+                Debug.Log($"[PeriodDebug] SubmitAssetDialog blocked. Amount {amount} exceeds max {_current.AssetDialog.MaxAmount}.");
                 Publish(_current.With(statusMessage: "Сумма операции превышает доступный лимит."));
                 return;
             }
@@ -346,6 +383,8 @@ namespace Game.Core.Application.Periods
                     DateTime.UtcNow.ToString("O"))
             };
 
+            Debug.Log($"[PeriodDebug] SubmitAssetDialog passed validation. NextOperationCount={nextOperations.Count}.");
+
             ApplyMutation(
                 _current.Expenses,
                 nextOperations,
@@ -355,7 +394,11 @@ namespace Game.Core.Application.Periods
                 string.Empty,
                 true);
 
+            Debug.Log(
+                $"[PeriodDebug] ApplyMutation completed for asset submit. NewOperationCount={(_current.AssetOperations != null ? _current.AssetOperations.Count : 0)}, Cash={_current.Summary.CashBalance}, Deposit={_current.Summary.DepositBalance}, Remaining={_current.Summary.RemainingToAllocate}.");
+
             _popupNavigation?.Pop("asset_operation_submit");
+            Debug.Log("[PeriodDebug] PopupNavigation.Pop called for asset submit.");
         }
 
         public void CloseAssetDialog()
@@ -469,6 +512,24 @@ namespace Game.Core.Application.Periods
                             UserActionType.Interaction,
                             "period_checkpoint_submit_succeeded",
                             BuildPeriodMetadata(_current));
+
+                        var totalPeriods = ResolveTotalPeriodCount(clientRuntime);
+                        var hasNextPeriod = totalPeriods > 0 && _current.PeriodNumber < totalPeriods;
+
+                        if (hasNextPeriod)
+                        {
+                            var nextPeriodNumber = _current.PeriodNumber + 1;
+                            _sessionCoordinator?.UpdateLocalRunProgress(nextPeriodNumber, RunLifecycleStatus.InProgress);
+                            ActivateCurrentPeriod();
+                            return;
+                        }
+
+                        var completionMessage = "Все периоды завершены. Далее будет пост-экспериментальный этап.";
+                        Publish(_current.With(
+                            statusMessage: completionMessage,
+                            lastError: string.Empty));
+                        PersistCurrentState();
+                        _sessionCoordinator?.CompleteRunLocally(completionMessage, "run_completed_after_last_period");
                         return;
                     }
 
@@ -723,6 +784,106 @@ namespace Game.Core.Application.Periods
             return null;
         }
 
+        private PeriodExpenseState FindExpenseState(string expenseId)
+        {
+            if (!_current.HasDefinition || string.IsNullOrWhiteSpace(expenseId))
+            {
+                return null;
+            }
+
+            foreach (var expenseState in _current.Expenses)
+            {
+                if (expenseState != null && string.Equals(expenseState.ExpenseId, expenseId, StringComparison.Ordinal))
+                {
+                    return expenseState;
+                }
+            }
+
+            return null;
+        }
+
+        private bool CanAssignExpenseAmount(
+            PeriodExpenseState expenseState,
+            FundsSourceType targetSource,
+            double targetAmount,
+            out string validationMessage)
+        {
+            validationMessage = string.Empty;
+
+            if (expenseState == null || targetAmount < 0d)
+            {
+                validationMessage = "Сумма расхода должна быть неотрицательной.";
+                return false;
+            }
+
+            var definition = FindExpenseDefinition(expenseState.ExpenseId);
+
+            if (definition == null)
+            {
+                return true;
+            }
+
+            var availableAmount = ResolveAvailableAmountForExpense(expenseState, targetSource);
+
+            if (targetAmount <= availableAmount + 0.01d)
+            {
+                return true;
+            }
+
+            validationMessage = BuildExpenseSourceValidationMessage(definition, targetSource, availableAmount);
+            return false;
+        }
+
+        private double ResolveAvailableAmountForExpense(PeriodExpenseState expenseState, FundsSourceType targetSource)
+        {
+            var summary = _current.Summary ?? PeriodCalculationSummary.Empty;
+            var currentAmount = expenseState != null ? Math.Max(0d, expenseState.Amount) : 0d;
+            var currentSource = expenseState != null ? expenseState.Source : FundsSourceType.Unknown;
+
+            switch (targetSource)
+            {
+                case FundsSourceType.CurrentIncome:
+                    return Math.Max(0d, summary.RemainingToAllocate + (currentSource == FundsSourceType.CurrentIncome ? currentAmount : 0d));
+                case FundsSourceType.Cash:
+                    return Math.Max(0d, summary.CashBalance + (currentSource == FundsSourceType.Cash ? currentAmount : 0d));
+                case FundsSourceType.Deposit:
+                    return Math.Max(0d, summary.DepositBalance + (currentSource == FundsSourceType.Deposit ? currentAmount : 0d));
+                default:
+                    return 0d;
+            }
+        }
+
+        private string BuildExpenseSourceValidationMessage(
+            PeriodExpenseDefinition definition,
+            FundsSourceType source,
+            double availableAmount)
+        {
+            var title = definition != null && !string.IsNullOrWhiteSpace(definition.Title)
+                ? $"«{definition.Title}»"
+                : "этой статьи";
+            var availableText = availableAmount.ToString("0.##", CultureInfo.InvariantCulture);
+
+            switch (source)
+            {
+                case FundsSourceType.Cash:
+                    return $"Для {title} не хватает наличных. Доступно: {availableText} ₽.";
+                case FundsSourceType.Deposit:
+                    return $"Для {title} не хватает средств на депозите. Доступно: {availableText} ₽.";
+                case FundsSourceType.CurrentIncome:
+                default:
+                    return $"Для {title} не хватает располагаемого дохода. Осталось распределить: {availableText} ₽.";
+            }
+        }
+
+        private void RejectExpenseMutation(string message)
+        {
+            Publish(_current.With(
+                statusMessage: string.IsNullOrWhiteSpace(message)
+                    ? "Изменение расхода недоступно."
+                    : message,
+                lastError: string.Empty));
+        }
+
         private PeriodAssetDefinition FindAssetDefinition(string assetId)
         {
             if (!_current.HasDefinition)
@@ -792,6 +953,21 @@ namespace Game.Core.Application.Periods
             }
 
             return "Период пока нельзя завершить.";
+        }
+
+        private static int ResolveTotalPeriodCount(ClientRuntimeState clientRuntime)
+        {
+            if (clientRuntime == null || !clientRuntime.HasSession)
+            {
+                return 0;
+            }
+
+            return clientRuntime.Bootstrap != null
+                   && clientRuntime.Bootstrap.Session != null
+                   && clientRuntime.Bootstrap.Session.SessionConfig != null
+                   && clientRuntime.Bootstrap.Session.SessionConfig.PeriodCount.HasValue
+                ? Math.Max(0, clientRuntime.Bootstrap.Session.SessionConfig.PeriodCount.Value)
+                : 0;
         }
 
         private Dictionary<string, string> BuildPeriodMetadata(PeriodRuntimeState state)
