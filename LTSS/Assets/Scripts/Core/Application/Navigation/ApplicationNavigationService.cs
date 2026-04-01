@@ -58,7 +58,7 @@ namespace Game.Core.Application.Navigation
         public void ShowError(string message, string reason = null)
         {
             _stateStore.SetState(state => state.With(
-                lastError: message ?? "Unknown error"));
+                lastError: message ?? "Неизвестная ошибка."));
 
             MoveTo(AppStateId.FatalError, reason);
         }

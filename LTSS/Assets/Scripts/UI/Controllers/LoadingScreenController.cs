@@ -49,13 +49,13 @@ public sealed class LoadingScreenController : ScreenController
         switch (appStateId)
         {
             case AppStateId.Bootstrapping:
-                return "Initializing";
+                return "Запуск";
             case AppStateId.Authenticating:
-                return "Authenticating";
+                return "Вход";
             case AppStateId.LoadingSession:
-                return "Loading Session";
+                return "Сессия";
             default:
-                return "Loading";
+                return "Загрузка";
         }
     }
 
@@ -67,7 +67,7 @@ public sealed class LoadingScreenController : ScreenController
         }
 
         return string.IsNullOrWhiteSpace(state.StatusMessage)
-            ? "Please wait..."
+            ? "Подождите..."
             : state.StatusMessage;
     }
 }

@@ -7,37 +7,42 @@ using Game.Core.Application.UI;
 
 public sealed class SessionReadyScreenView : ScreenView
 {
-    [Header("Summary References")]
-    [SerializeField] private Text _sessionTitleLabel;
-    [SerializeField] private Text _sessionCodeLabel;
-    [SerializeField] private Text _participantLabel;
-    [SerializeField] private Text _runLabel;
-    [SerializeField] private Text _surveyLabel;
-    [SerializeField] private Text _configLabel;
-    [SerializeField] private Button _continueButton;
-    [SerializeField] private Button _logoutButton;
+    private Text _sessionTitleLabel;
+    private Text _sessionCodeLabel;
+    private Text _participantLabel;
+    private Text _runLabel;
+    private Text _surveyLabel;
+    private Text _configLabel;
+    private Button _continueButton;
+    private Button _logoutButton;
+    private bool _isBuilt;
 
     public override ScreenController Construct(UIContext context)
     {
+        EnsureBuilt();
         return new SessionReadyScreenController(this, context);
     }
 
     public void BindContinue(Action callback)
     {
+        EnsureBuilt();
         BindButton(_continueButton, callback);
     }
 
     public void BindLogout(Action callback)
     {
+        EnsureBuilt();
         BindButton(_logoutButton, callback);
     }
 
     public void ApplyRuntime(ClientRuntimeState runtimeState)
     {
+        EnsureBuilt();
+
         if (runtimeState == null || !runtimeState.HasSession)
         {
-            SetText(_sessionTitleLabel, "No session runtime");
-            SetText(_sessionCodeLabel, "Bootstrap payload is not available.");
+            SetText(_sessionTitleLabel, "Сессия не загружена");
+            SetText(_sessionCodeLabel, "Данные пока недоступны.");
             SetText(_participantLabel, string.Empty);
             SetText(_runLabel, string.Empty);
             SetText(_surveyLabel, string.Empty);
@@ -52,13 +57,13 @@ public sealed class SessionReadyScreenView : ScreenView
 
         SetText(
             _sessionTitleLabel,
-            string.IsNullOrWhiteSpace(session.Title) ? "Untitled Session" : session.Title);
-        SetText(_sessionCodeLabel, $"Code: {session.Code}  |  Status: {session.Status}");
+            string.IsNullOrWhiteSpace(session.Title) ? "Без названия" : session.Title);
+        SetText(_sessionCodeLabel, $"Код: {session.Code}  |  Статус: {session.Status}");
 
         var participantBuilder = new StringBuilder();
-        participantBuilder.Append("Participant: ");
+        participantBuilder.Append("Участник: ");
         participantBuilder.Append(string.IsNullOrWhiteSpace(participant.Login) ? "-" : participant.Login);
-        participantBuilder.Append("  |  Group: ");
+        participantBuilder.Append("  |  Группа: ");
         participantBuilder.Append(string.IsNullOrWhiteSpace(participant.AssignedGroupCode)
             ? "-"
             : participant.AssignedGroupCode);
@@ -66,20 +71,52 @@ public sealed class SessionReadyScreenView : ScreenView
 
         SetText(
             _runLabel,
-            $"Run: {run.RunId}  |  Status: {run.RunStatus}  |  Current period: {run.CurrentPeriodNumber}");
+            $"Запуск: {run.RunId}  |  Статус: {run.RunStatus}  |  Период: {run.CurrentPeriodNumber}");
 
         SetText(
             _surveyLabel,
-            $"Survey templates: {templates.Count}  |  Bootstrap version: {runtimeState.Bootstrap.BootstrapVersion}");
+            $"Анкеты: {templates.Count}  |  Версия bootstrap: {runtimeState.Bootstrap.BootstrapVersion}");
 
         var periodSummary = session.SessionConfig.PeriodCount.HasValue
             ? session.SessionConfig.PeriodCount.Value.ToString()
-            : "n/a";
+            : "нет";
 
         SetText(
             _configLabel,
-            $"Config v{session.ConfigVersion}  |  Session config: {session.SessionConfig.Summary}  |  " +
-            $"Assigned config: {participant.AssignedConfig.Summary}  |  Periods: {periodSummary}");
+            $"Конфиг v{session.ConfigVersion}  |  Сессия: {session.SessionConfig.Summary}  |  " +
+            $"Группа: {participant.AssignedConfig.Summary}  |  Этапов: {periodSummary}");
+    }
+
+    private void EnsureBuilt()
+    {
+        if (_isBuilt)
+        {
+            return;
+        }
+
+        _isBuilt = true;
+
+        var background = RuntimeUiFactory.CreateScreenBackground(transform);
+        var card = RuntimeUiFactory.CreateCard("SessionCard", background, new Vector2(720f, 520f));
+        var content = RuntimeUiFactory.CreateContentRoot(
+            "Content",
+            card,
+            new RectOffset(34, 34, 34, 30),
+            12f);
+
+        _sessionTitleLabel = RuntimeUiFactory.CreateTitle(content, "Сессия", TextAnchor.MiddleLeft);
+        _sessionCodeLabel = RuntimeUiFactory.CreateCaption(content, string.Empty);
+        RuntimeUiFactory.AddSpacer(content, 8f);
+
+        _participantLabel = RuntimeUiFactory.CreateBodyText(content, string.Empty);
+        _runLabel = RuntimeUiFactory.CreateBodyText(content, string.Empty);
+        _surveyLabel = RuntimeUiFactory.CreateBodyText(content, string.Empty);
+        _configLabel = RuntimeUiFactory.CreateCaption(content, string.Empty);
+        RuntimeUiFactory.AddSpacer(content, 14f);
+
+        var buttonRow = RuntimeUiFactory.CreateRow("Buttons", content, 12f, TextAnchor.MiddleCenter);
+        _continueButton = RuntimeUiFactory.CreatePrimaryButton(buttonRow, "Дальше");
+        _logoutButton = RuntimeUiFactory.CreateSecondaryButton(buttonRow, "Выйти");
     }
 
     private static void BindButton(Button button, Action callback)

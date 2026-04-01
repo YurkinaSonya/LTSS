@@ -76,28 +76,28 @@ public sealed class GameplayPlaceholderScreenController : ScreenController
             : GameSessionSnapshot.Empty;
         var builder = new StringBuilder();
 
-        builder.AppendLine("Gameplay foundation placeholder");
+        builder.AppendLine("Технический экран");
         builder.AppendLine();
-        builder.Append("Stage: ").AppendLine(gameSession.Stage.ToString());
-        builder.Append("Phase: ").AppendLine(gameSession.Phase.ToString());
-        builder.Append("Metrics: ")
+        builder.Append("Этап: ").AppendLine(gameSession.Stage.ToString());
+        builder.Append("Фаза: ").AppendLine(gameSession.Phase.ToString());
+        builder.Append("Метрики: ")
             .Append(gameSession.Metrics.NumericMetrics.Count)
-            .Append(" numeric, ")
+            .Append(" числ., ")
             .Append(gameSession.Metrics.StringMetrics.Count)
-            .AppendLine(" text");
+            .AppendLine(" текст.");
 
         if (runtimeState != null && runtimeState.HasSession)
         {
             builder.AppendLine();
-            builder.Append("Session: ")
+            builder.Append("Сессия: ")
                 .AppendLine(string.IsNullOrWhiteSpace(runtimeState.Bootstrap.Session.Title)
                     ? runtimeState.Bootstrap.Session.Code
                     : runtimeState.Bootstrap.Session.Title);
-            builder.Append("Run: ")
+            builder.Append("Запуск: ")
                 .Append(runtimeState.Bootstrap.Run.RunId)
                 .Append(" / ")
                 .AppendLine(runtimeState.Bootstrap.Run.RunStatus.ToString());
-            builder.Append("Current period: ")
+            builder.Append("Период: ")
                 .AppendLine(runtimeState.Bootstrap.Run.CurrentPeriodNumber.ToString());
         }
 

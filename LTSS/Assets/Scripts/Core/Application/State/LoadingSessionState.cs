@@ -21,7 +21,7 @@ namespace Game.Core.Application.State
                 gameFlowStage: GameFlowStage.Bootstrap,
                 gameFlowPhase: GameFlowPhase.Preparation,
                 isBusy: true,
-                statusMessage: "Loading session data...",
+                statusMessage: "Загрузка сессии...",
                 lastError: string.Empty));
         }
 

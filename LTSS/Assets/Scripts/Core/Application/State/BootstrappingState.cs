@@ -21,7 +21,7 @@ namespace Game.Core.Application.State
                 gameFlowStage: GameFlowStage.Bootstrap,
                 gameFlowPhase: GameFlowPhase.Preparation,
                 isBusy: true,
-                statusMessage: "Initializing application...",
+                statusMessage: "Инициализация...",
                 lastError: string.Empty));
         }
 

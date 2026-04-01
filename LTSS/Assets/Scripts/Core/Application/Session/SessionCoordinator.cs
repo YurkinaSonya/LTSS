@@ -127,7 +127,7 @@ namespace Game.Core.Application.Session
                     return;
                 }
 
-                var errorMessage = BuildApiError("Failed to restore session.", response);
+                var errorMessage = BuildApiError("Не удалось восстановить сессию.", response);
                 _logger.Warning(errorMessage);
                 SetRecoverableError(errorMessage, fallbackState, "session_restore_failed");
             });
@@ -143,7 +143,7 @@ namespace Game.Core.Application.Session
             if (string.IsNullOrWhiteSpace(login) || string.IsNullOrWhiteSpace(password))
             {
                 _stateStore.SetState(state => state.With(
-                    lastError: "Enter login and password."));
+                    lastError: "Введите логин и пароль."));
                 return;
             }
 
@@ -161,7 +161,7 @@ namespace Game.Core.Application.Session
 
                 if (!response.IsSuccess || response.Payload == null)
                 {
-                    var errorMessage = BuildApiError("Authentication failed.", response);
+                    var errorMessage = BuildApiError("Не удалось выполнить вход.", response);
                     _logger.Warning(errorMessage);
                     SetRecoverableError(errorMessage, AppStateId.Login, "login_failed");
                     return;
@@ -169,7 +169,7 @@ namespace Game.Core.Application.Session
 
                 if (string.IsNullOrWhiteSpace(response.Payload.token))
                 {
-                    HandleFatalError("Authentication succeeded but token is missing.", "login_invalid_response");
+                    HandleFatalError("Вход выполнен, но токен не получен.", "login_invalid_response");
                     return;
                 }
 
@@ -180,7 +180,7 @@ namespace Game.Core.Application.Session
 
                 if (!_currentRunInfo.IsValid)
                 {
-                    HandleFatalError("Authentication succeeded but run info is missing.", "login_missing_run");
+                    HandleFatalError("Вход выполнен, но данные запуска отсутствуют.", "login_missing_run");
                     return;
                 }
 
@@ -300,7 +300,7 @@ namespace Game.Core.Application.Session
                     return;
                 }
 
-                var errorMessage = BuildApiError("Failed to load session bootstrap.", response);
+                var errorMessage = BuildApiError("Не удалось загрузить данные сессии.", response);
                 _logger.Warning(errorMessage);
                 SetRecoverableError(errorMessage, loginFallbackState, "bootstrap_failed");
             });
@@ -314,7 +314,7 @@ namespace Game.Core.Application.Session
             if (!_persistenceService.TryLoadBootstrapSnapshot(out var snapshot)
                 || snapshot == null)
             {
-                error = "Bootstrap snapshot is not available.";
+                error = "Локальный снимок сессии недоступен.";
                 return false;
             }
 
@@ -322,7 +322,7 @@ namespace Game.Core.Application.Session
                 && _currentRunInfo.IsValid
                 && !string.Equals(snapshot.runId, _currentRunInfo.RunId, StringComparison.Ordinal))
             {
-                error = "Stored bootstrap snapshot belongs to a different run.";
+                error = "Локальный снимок относится к другому запуску.";
                 return false;
             }
 
@@ -379,7 +379,7 @@ namespace Game.Core.Application.Session
             AppStateId fallbackState,
             string reason)
         {
-            _stateStore.SetState(state => state.With(lastError: message ?? "Unknown error"));
+            _stateStore.SetState(state => state.With(lastError: message ?? "Неизвестная ошибка."));
             PublishRuntime(ClientRuntimeState.Empty);
             _navigation.MoveTo(fallbackState, reason);
         }
@@ -387,7 +387,7 @@ namespace Game.Core.Application.Session
         private void HandleFatalError(string message, string reason)
         {
             _logger.Error(message);
-            _stateStore.SetState(state => state.With(lastError: message ?? "Unknown error"));
+            _stateStore.SetState(state => state.With(lastError: message ?? "Неизвестная ошибка."));
             PublishRuntime(ClientRuntimeState.Empty);
             _navigation.MoveTo(AppStateId.FatalError, reason);
         }
