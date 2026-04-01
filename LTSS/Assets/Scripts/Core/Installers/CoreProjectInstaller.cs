@@ -4,6 +4,7 @@ using Game.Core.Application.Bootstrap;
 using Game.Core.Application.Logging;
 using Game.Core.Application.Navigation;
 using Game.Core.Application.Networking;
+using Game.Core.Application.Periods;
 using Game.Core.Application.Session;
 using Game.Core.Application.State;
 using Game.Core.Events;
@@ -113,6 +114,31 @@ namespace Game.Core.Installers
 
             Container.Bind<ISessionPersistenceService>()
                 .To<SessionPersistenceService>()
+                .AsSingle()
+                .NonLazy();
+
+            Container.Bind<IPeriodCalculationEngine>()
+                .To<PeriodCalculationEngine>()
+                .AsSingle()
+                .NonLazy();
+
+            Container.Bind<IPeriodRuntimeFactory>()
+                .To<PeriodRuntimeFactory>()
+                .AsSingle()
+                .NonLazy();
+
+            Container.Bind<IPeriodCheckpointBuilder>()
+                .To<PeriodCheckpointBuilder>()
+                .AsSingle()
+                .NonLazy();
+
+            Container.Bind<ICheckpointSender>()
+                .To<CheckpointSender>()
+                .AsSingle()
+                .NonLazy();
+
+            Container.Bind<IPeriodGameplayService>()
+                .To<PeriodGameplayService>()
                 .AsSingle()
                 .NonLazy();
 

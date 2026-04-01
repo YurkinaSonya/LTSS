@@ -8,6 +8,7 @@ using Game.Core.Application;
 using Game.Core.Application.Logging;
 using Game.Core.Application.Navigation;
 using Game.Core.Application.Networking;
+using Game.Core.Application.Periods;
 using Game.Core.Application.Session;
 using Game.Core.Application.State;
 using Game.Core.Application.UI;
@@ -45,6 +46,7 @@ public class UIController : MonoBehaviour, IInitializable, IDisposable
         IApplicationNavigationService navigation,
         IGameSessionService gameSessionService,
         ISessionCoordinator sessionCoordinator,
+        IPeriodGameplayService periodGameplayService,
         IUserActionLogger userActionLogger,
         IAppLogger appLogger,
         IEventAggregator eventAggregator,
@@ -59,6 +61,7 @@ public class UIController : MonoBehaviour, IInitializable, IDisposable
             popupNavigation,
             gameSessionService,
             sessionCoordinator,
+            periodGameplayService,
             userActionLogger,
             appLogger,
             eventAggregator,

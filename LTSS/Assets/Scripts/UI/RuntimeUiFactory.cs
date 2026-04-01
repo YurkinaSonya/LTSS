@@ -191,12 +191,22 @@ public static class RuntimeUiFactory
 
     public static Button CreatePrimaryButton(Transform parent, string text)
     {
-        return CreateButton(parent, text, PrimaryColor, Color.white, false);
+        return CreatePrimaryButton(parent, text, 54f);
+    }
+
+    public static Button CreatePrimaryButton(Transform parent, string text, float height)
+    {
+        return CreateButton(parent, text, PrimaryColor, Color.white, false, height);
     }
 
     public static Button CreateSecondaryButton(Transform parent, string text)
     {
-        return CreateButton(parent, text, PrimarySoftColor, TextPrimaryColor, true);
+        return CreateSecondaryButton(parent, text, 54f);
+    }
+
+    public static Button CreateSecondaryButton(Transform parent, string text, float height)
+    {
+        return CreateButton(parent, text, PrimarySoftColor, TextPrimaryColor, true, height);
     }
 
     public static InputField CreateInputField(
@@ -268,16 +278,70 @@ public static class RuntimeUiFactory
         layoutElement.flexibleHeight = 0f;
     }
 
+    public static void AddFlexibleSpacer(Transform parent)
+    {
+        var spacer = CreateRect("FlexibleSpacer", parent);
+        var layoutElement = spacer.gameObject.AddComponent<LayoutElement>();
+        layoutElement.flexibleWidth = 1f;
+        layoutElement.flexibleHeight = 1f;
+    }
+
+    public static Text CreateValueText(
+        Transform parent,
+        string value,
+        int fontSize = 32,
+        TextAnchor alignment = TextAnchor.MiddleLeft)
+    {
+        return CreateText(parent, value, fontSize, TextPrimaryColor, alignment, FontStyle.Bold);
+    }
+
+    public static RectTransform CreateSurface(
+        string name,
+        Transform parent,
+        Color? backgroundColor = null,
+        bool outlined = true)
+    {
+        var rect = CreateRect(name, parent);
+        var image = rect.gameObject.AddComponent<Image>();
+        image.color = backgroundColor ?? SurfaceColor;
+        image.raycastTarget = false;
+
+        if (outlined)
+        {
+            var outline = rect.gameObject.AddComponent<Outline>();
+            outline.effectColor = BorderColor;
+            outline.effectDistance = new Vector2(1f, -1f);
+        }
+
+        return rect;
+    }
+
+    public static void SetButtonText(Button button, string text)
+    {
+        if (button == null)
+        {
+            return;
+        }
+
+        var label = button.GetComponentInChildren<Text>(true);
+
+        if (label != null)
+        {
+            label.text = text ?? string.Empty;
+        }
+    }
+
     private static Button CreateButton(
         Transform parent,
         string text,
         Color backgroundColor,
         Color textColor,
-        bool outlined)
+        bool outlined,
+        float height)
     {
         var buttonRect = CreateRect("Button", parent);
         var layoutElement = buttonRect.gameObject.AddComponent<LayoutElement>();
-        layoutElement.preferredHeight = 54f;
+        layoutElement.preferredHeight = height;
         layoutElement.flexibleWidth = 1f;
 
         var image = buttonRect.gameObject.AddComponent<Image>();

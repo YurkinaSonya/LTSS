@@ -13,6 +13,7 @@ public class Enums
     public enum PopupType
     {
         Casual,
-        Results
+        Results,
+        AssetOperation
     }
 }

@@ -126,7 +126,7 @@ MonoBehaviour:
   _bootstrapSettings:
     InitialState: 2
   _apiSettings:
-    BaseUrl: 
+    BaseUrl: https://tomcat.sonya.jij.li/ltss
     TimeoutSeconds: 10
     DefaultHeaders: []
 --- !u!1 &8649493612045760305

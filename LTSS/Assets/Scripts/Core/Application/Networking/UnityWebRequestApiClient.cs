@@ -11,6 +11,8 @@ namespace Game.Core.Application.Networking
 {
     public sealed class UnityWebRequestApiClient : IApiClient
     {
+        private const int MaxLoggedBodyLength = 400;
+
         private readonly ApiServiceSettings _settings;
         private readonly IJsonSerializer _serializer;
         private readonly CoroutineRunner _coroutineRunner;
@@ -122,7 +124,7 @@ namespace Game.Core.Application.Networking
                 var response = BuildResponse<TResponse>(
                     isSuccess,
                     request.responseCode,
-                    request.error,
+                    BuildErrorDetail(request.error, rawResponse),
                     rawResponse);
 
                 var metadata = new Dictionary<string, string>
@@ -136,6 +138,18 @@ namespace Game.Core.Application.Networking
                     metadata["path"] = relativePath;
                 }
 
+                if (!isSuccess)
+                {
+                    metadata["error"] = response.Error;
+
+                    var responseSnippet = BuildResponseSnippet(rawResponse);
+
+                    if (!string.IsNullOrWhiteSpace(responseSnippet))
+                    {
+                        metadata["response"] = responseSnippet;
+                    }
+                }
+
                 _userActionLogger.Log(
                     isSuccess ? UserActionType.HttpResponse : UserActionType.HttpError,
                     requestUrl,
@@ -146,13 +160,21 @@ namespace Game.Core.Application.Networking
                     requestUrl,
                     isSuccess,
                     request.responseCode,
-                    request.error));
+                    response.Error));
 
                 if (!isSuccess)
                 {
-                    _logger.Warning(
+                    var responseSnippet = BuildResponseSnippet(rawResponse);
+                    var logMessage =
                         $"HTTP request failed. Method: {method}, Url: {requestUrl}, " +
-                        $"Status: {request.responseCode}, Error: {request.error}");
+                        $"Status: {request.responseCode}, Error: {response.Error}";
+
+                    if (!string.IsNullOrWhiteSpace(responseSnippet))
+                    {
+                        logMessage += $", Response: {responseSnippet}";
+                    }
+
+                    _logger.Warning(logMessage);
                 }
 
                 onCompleted?.Invoke(response);
@@ -273,6 +295,187 @@ namespace Game.Core.Application.Networking
 
                 request.SetRequestHeader(header.Key, header.Value ?? string.Empty);
             }
+        }
+
+        private static string BuildErrorDetail(string requestError, string rawResponse)
+        {
+            var responseError = TryExtractErrorFromResponse(rawResponse);
+
+            if (!string.IsNullOrWhiteSpace(responseError))
+            {
+                return responseError;
+            }
+
+            return string.IsNullOrWhiteSpace(requestError)
+                ? "Запрос завершился с ошибкой."
+                : requestError.Trim();
+        }
+
+        private static string TryExtractErrorFromResponse(string rawResponse)
+        {
+            if (string.IsNullOrWhiteSpace(rawResponse))
+            {
+                return string.Empty;
+            }
+
+            var trimmed = rawResponse.Trim();
+            var jsonMessage = TryExtractJsonValue(trimmed, "message");
+
+            if (string.IsNullOrWhiteSpace(jsonMessage))
+            {
+                jsonMessage = TryExtractJsonValue(trimmed, "error");
+            }
+
+            if (string.IsNullOrWhiteSpace(jsonMessage))
+            {
+                jsonMessage = TryExtractJsonValue(trimmed, "detail");
+            }
+
+            if (string.IsNullOrWhiteSpace(jsonMessage))
+            {
+                jsonMessage = TryExtractJsonValue(trimmed, "title");
+            }
+
+            return !string.IsNullOrWhiteSpace(jsonMessage)
+                ? jsonMessage
+                : BuildResponseSnippet(trimmed);
+        }
+
+        private static string TryExtractJsonValue(string rawResponse, string propertyName)
+        {
+            if (string.IsNullOrWhiteSpace(rawResponse) || string.IsNullOrWhiteSpace(propertyName))
+            {
+                return string.Empty;
+            }
+
+            var pattern = $"\"{propertyName}\"";
+            var propertyIndex = rawResponse.IndexOf(pattern, StringComparison.OrdinalIgnoreCase);
+
+            if (propertyIndex < 0)
+            {
+                return string.Empty;
+            }
+
+            var colonIndex = rawResponse.IndexOf(':', propertyIndex + pattern.Length);
+
+            if (colonIndex < 0)
+            {
+                return string.Empty;
+            }
+
+            var valueStart = colonIndex + 1;
+
+            while (valueStart < rawResponse.Length && char.IsWhiteSpace(rawResponse[valueStart]))
+            {
+                valueStart++;
+            }
+
+            if (valueStart >= rawResponse.Length)
+            {
+                return string.Empty;
+            }
+
+            if (rawResponse[valueStart] == '"')
+            {
+                valueStart++;
+                var builder = new StringBuilder();
+                var isEscaped = false;
+
+                while (valueStart < rawResponse.Length)
+                {
+                    var symbol = rawResponse[valueStart++];
+
+                    if (isEscaped)
+                    {
+                        switch (symbol)
+                        {
+                            case '"':
+                            case '\\':
+                            case '/':
+                                builder.Append(symbol);
+                                break;
+                            case 'n':
+                                builder.Append(' ');
+                                break;
+                            case 'r':
+                            case 't':
+                                builder.Append(' ');
+                                break;
+                            default:
+                                builder.Append(symbol);
+                                break;
+                        }
+
+                        isEscaped = false;
+                        continue;
+                    }
+
+                    if (symbol == '\\')
+                    {
+                        isEscaped = true;
+                        continue;
+                    }
+
+                    if (symbol == '"')
+                    {
+                        break;
+                    }
+
+                    builder.Append(symbol);
+                }
+
+                return NormalizeWhitespace(builder.ToString());
+            }
+
+            var valueEnd = valueStart;
+
+            while (valueEnd < rawResponse.Length
+                   && rawResponse[valueEnd] != ','
+                   && rawResponse[valueEnd] != '}'
+                   && rawResponse[valueEnd] != ']')
+            {
+                valueEnd++;
+            }
+
+            return NormalizeWhitespace(rawResponse.Substring(valueStart, valueEnd - valueStart));
+        }
+
+        private static string BuildResponseSnippet(string rawResponse)
+        {
+            var compact = NormalizeWhitespace(rawResponse);
+
+            if (string.IsNullOrWhiteSpace(compact))
+            {
+                return string.Empty;
+            }
+
+            if (compact.Length > MaxLoggedBodyLength)
+            {
+                return compact.Substring(0, MaxLoggedBodyLength) + "...";
+            }
+
+            return compact;
+        }
+
+        private static string NormalizeWhitespace(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var compact = value
+                .Replace('\r', ' ')
+                .Replace('\n', ' ')
+                .Replace('\t', ' ')
+                .Trim();
+
+            while (compact.Contains("  "))
+            {
+                compact = compact.Replace("  ", " ");
+            }
+
+            return compact;
         }
     }
 }

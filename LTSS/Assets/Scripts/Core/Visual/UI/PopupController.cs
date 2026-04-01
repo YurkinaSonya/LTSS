@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
@@ -7,6 +8,8 @@ using Game.Core.Application.UI;
 
 public class PopupController : MonoBehaviour
 {  
+    private const string PopupResourcePath = "UI/Popups";
+
     [SerializeField] private CanvasGroup _popupCanvas;
     [SerializeField] protected Button _backBGButton;
     [SerializeField] private List<PopupSlotData> _popups;
@@ -14,6 +17,8 @@ public class PopupController : MonoBehaviour
     private readonly List<Popup> _popupLayouts = new List<Popup>();
     private readonly Dictionary<Enums.PopupType, Popup> _popupRegistry =
         new Dictionary<Enums.PopupType, Popup>();
+    private readonly Dictionary<Enums.PopupType, Type> _runtimePopupTypes =
+        new Dictionary<Enums.PopupType, Type>();
 
     private UIContext _uiContext;
     private IPopupNavigationService _popupNavigation;
@@ -125,10 +130,11 @@ public class PopupController : MonoBehaviour
     private void BuildRegistry()
     {
         _popupRegistry.Clear();
+        _runtimePopupTypes.Clear();
 
         if (_popups == null)
         {
-            return;
+            _popups = new List<PopupSlotData>();
         }
 
         foreach (var popup in _popups)
@@ -144,6 +150,60 @@ public class PopupController : MonoBehaviour
             }
 
             _popupRegistry.Add(popup.PopupType, popup.Popup);
+        }
+
+        var resourcePrefabs = Resources.LoadAll<GameObject>(PopupResourcePath);
+
+        if (resourcePrefabs != null)
+        {
+            foreach (var prefab in resourcePrefabs)
+            {
+                if (prefab == null)
+                {
+                    continue;
+                }
+
+                var popup = prefab.GetComponent<Popup>();
+
+                if (popup == null || _popupRegistry.ContainsKey(popup.PopupType))
+                {
+                    continue;
+                }
+
+                _popupRegistry.Add(popup.PopupType, popup);
+            }
+        }
+
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            Type[] types;
+
+            try
+            {
+                types = assembly.GetTypes();
+            }
+            catch
+            {
+                continue;
+            }
+
+            foreach (var type in types)
+            {
+                if (type == null || type.IsAbstract || !typeof(Popup).IsAssignableFrom(type))
+                {
+                    continue;
+                }
+
+                var attribute = Attribute.GetCustomAttribute(type, typeof(PopupDefinitionAttribute))
+                    as PopupDefinitionAttribute;
+
+                if (attribute == null || _runtimePopupTypes.ContainsKey(attribute.PopupType))
+                {
+                    continue;
+                }
+
+                _runtimePopupTypes.Add(attribute.PopupType, type);
+            }
         }
     }
 
@@ -183,17 +243,25 @@ public class PopupController : MonoBehaviour
 
         foreach (var popupRoute in popupStack)
         {
-            if (!_popupRegistry.TryGetValue(popupRoute.Type, out var popupPrefab) || popupPrefab == null)
+            Popup popup = null;
+
+            if (_popupRegistry.TryGetValue(popupRoute.Type, out var popupPrefab) && popupPrefab != null)
+            {
+                var popupParent = _popupCanvas != null
+                    ? _popupCanvas.gameObject.transform
+                    : transform;
+                popup = UnityEngine.Object.Instantiate(popupPrefab, popupParent);
+            }
+            else
+            {
+                popup = CreateRuntimePopupInstance(popupRoute.Type);
+            }
+
+            if (popup == null)
             {
                 _logger?.Warning($"Popup prefab is not registered for '{popupRoute.Type}'.");
                 continue;
             }
-
-            var popupParent = _popupCanvas != null
-                ? _popupCanvas.gameObject.transform
-                : transform;
-
-            var popup = Object.Instantiate(popupPrefab, popupParent);
             popup.Initialize(_uiContext, popupRoute, () => _popupNavigation?.Pop("popup_back"));
             _popupLayouts.Add(popup);
         }
@@ -217,6 +285,22 @@ public class PopupController : MonoBehaviour
         }
 
         _popupLayouts.Clear();
+    }
+
+    private Popup CreateRuntimePopupInstance(Enums.PopupType popupType)
+    {
+        if (!_runtimePopupTypes.TryGetValue(popupType, out var popupTypeDefinition) || popupTypeDefinition == null)
+        {
+            return null;
+        }
+
+        var popupParent = _popupCanvas != null
+            ? _popupCanvas.gameObject.transform
+            : transform;
+        var popupObject = new GameObject($"{popupType}Popup", typeof(RectTransform), typeof(CanvasGroup));
+        popupObject.transform.SetParent(popupParent, false);
+
+        return popupObject.AddComponent(popupTypeDefinition) as Popup;
     }
 }
 

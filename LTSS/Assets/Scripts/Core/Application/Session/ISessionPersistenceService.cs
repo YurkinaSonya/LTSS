@@ -11,6 +11,14 @@ namespace Game.Core.Application.Session
             string rawBootstrapPayload);
         bool TryLoadBootstrapSnapshot(out PersistedBootstrapSnapshot snapshot);
         void ClearBootstrapSnapshot();
+        void SavePeriodSnapshot(
+            string runId,
+            int periodNumber,
+            string flowState,
+            string rawPeriodState,
+            bool isCheckpointSubmitted);
+        bool TryLoadPeriodSnapshot(out PersistedPeriodSnapshot snapshot);
+        void ClearPeriodSnapshot();
         void ClearAll();
     }
 }

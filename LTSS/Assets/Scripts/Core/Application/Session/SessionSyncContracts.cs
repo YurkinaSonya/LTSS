@@ -8,7 +8,9 @@ namespace Game.Core.Application.Session
     public sealed class CheckpointRequestDto
     {
         public int periodNumber;
-        public string payloadJson;
+        public string checkpointJson;
+        public string summaryJson;
+        public string clientTimestampUtc;
     }
 
     [Serializable]

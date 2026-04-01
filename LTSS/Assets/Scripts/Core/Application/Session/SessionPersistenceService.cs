@@ -47,6 +47,7 @@ namespace Game.Core.Application.Session
     {
         private const string AuthContextKey = "session.auth_context";
         private const string BootstrapSnapshotKey = "session.bootstrap_snapshot";
+        private const string PeriodSnapshotKey = "session.period_snapshot";
 
         private readonly IJsonSerializer _serializer;
         private readonly IAppLogger _logger;
@@ -169,10 +170,73 @@ namespace Game.Core.Application.Session
             PlayerPrefs.Save();
         }
 
+        public void SavePeriodSnapshot(
+            string runId,
+            int periodNumber,
+            string flowState,
+            string rawPeriodState,
+            bool isCheckpointSubmitted)
+        {
+            if (string.IsNullOrWhiteSpace(runId)
+                || periodNumber <= 0
+                || string.IsNullOrWhiteSpace(rawPeriodState))
+            {
+                return;
+            }
+
+            var snapshot = new PersistedPeriodSnapshot
+            {
+                runId = runId,
+                periodNumber = periodNumber,
+                flowState = flowState ?? string.Empty,
+                rawPeriodStateJson = rawPeriodState,
+                savedAtUtc = DateTime.UtcNow.ToString("O"),
+                isCheckpointSubmitted = isCheckpointSubmitted,
+                canRestore = true
+            };
+
+            PlayerPrefs.SetString(PeriodSnapshotKey, _serializer.Serialize(snapshot));
+            PlayerPrefs.Save();
+        }
+
+        public bool TryLoadPeriodSnapshot(out PersistedPeriodSnapshot snapshot)
+        {
+            snapshot = null;
+
+            if (!PlayerPrefs.HasKey(PeriodSnapshotKey))
+            {
+                return false;
+            }
+
+            var raw = PlayerPrefs.GetString(PeriodSnapshotKey, string.Empty);
+
+            if (!_serializer.TryDeserialize(raw, out snapshot, out var error)
+                || snapshot == null
+                || !snapshot.canRestore
+                || string.IsNullOrWhiteSpace(snapshot.runId)
+                || snapshot.periodNumber <= 0
+                || string.IsNullOrWhiteSpace(snapshot.rawPeriodStateJson))
+            {
+                _logger.Warning($"Stored period snapshot is invalid. {error}");
+                ClearPeriodSnapshot();
+                snapshot = null;
+                return false;
+            }
+
+            return true;
+        }
+
+        public void ClearPeriodSnapshot()
+        {
+            PlayerPrefs.DeleteKey(PeriodSnapshotKey);
+            PlayerPrefs.Save();
+        }
+
         public void ClearAll()
         {
             ClearAuthContext();
             ClearBootstrapSnapshot();
+            ClearPeriodSnapshot();
         }
     }
 }

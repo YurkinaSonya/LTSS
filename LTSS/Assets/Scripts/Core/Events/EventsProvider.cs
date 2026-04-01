@@ -56,6 +56,16 @@ namespace Game.Core.Events
             }
         }
 
+        public sealed class PeriodRuntimeChangedEvent
+        {
+            public PeriodRuntimeState RuntimeState { get; }
+
+            public PeriodRuntimeChangedEvent(PeriodRuntimeState runtimeState)
+            {
+                RuntimeState = runtimeState;
+            }
+        }
+
         public sealed class UserActionLoggedEvent
         {
             public UserActionLogEntry Entry { get; }
