@@ -122,7 +122,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   _coroutineRunner: {fileID: 7275722705187925925}
-  _uiController: {fileID: 0}
+  _uiController: {fileID: 78795173199742576}
   _bootstrapSettings:
     InitialState: 2
   _apiSettings:
