@@ -3,6 +3,9 @@ using UnityEngine.UI;
 
 public static class RuntimeUiFactory
 {
+    private const string RegularFontResourcePath = "Fonts/Inter-Regular";
+    private const string BoldFontResourcePath = "Fonts/Inter-Bold";
+
     public static readonly Color BackgroundColor = FromHex("EEF1FA");
     public static readonly Color SurfaceColor = FromHex("F8F9FE");
     public static readonly Color ElevatedSurfaceColor = FromHex("FFFFFF");
@@ -15,6 +18,7 @@ public static class RuntimeUiFactory
     public static readonly Color DangerColor = FromHex("C15D74");
 
     private static Font _defaultFont;
+    private static Font _boldFont;
 
     public static Font DefaultFont
     {
@@ -22,10 +26,33 @@ public static class RuntimeUiFactory
         {
             if (_defaultFont == null)
             {
-                _defaultFont = Resources.GetBuiltinResource<Font>("Arial.ttf");
+                _defaultFont = Resources.Load<Font>(RegularFontResourcePath);
+
+                if (_defaultFont == null)
+                {
+                    _defaultFont = Resources.GetBuiltinResource<Font>("Arial.ttf");
+                }
             }
 
             return _defaultFont;
+        }
+    }
+
+    public static Font BoldFont
+    {
+        get
+        {
+            if (_boldFont == null)
+            {
+                _boldFont = Resources.Load<Font>(BoldFontResourcePath);
+
+                if (_boldFont == null)
+                {
+                    _boldFont = DefaultFont;
+                }
+            }
+
+            return _boldFont;
         }
     }
 
@@ -334,6 +361,17 @@ public static class RuntimeUiFactory
         }
     }
 
+    public static void ApplyTextStyle(Text label, FontStyle fontStyle)
+    {
+        if (label == null)
+        {
+            return;
+        }
+
+        label.font = ResolveFont(fontStyle);
+        label.fontStyle = NormalizeFontStyle(fontStyle);
+    }
+
     private static Button CreateButton(
         Transform parent,
         string text,
@@ -374,9 +412,9 @@ public static class RuntimeUiFactory
         Stretch(labelRect, 14f, 14f, 0f, 0f);
 
         var label = labelRect.gameObject.AddComponent<Text>();
-        label.font = DefaultFont;
+        label.font = BoldFont;
         label.fontSize = 18;
-        label.fontStyle = FontStyle.Bold;
+        label.fontStyle = FontStyle.Normal;
         label.alignment = TextAnchor.MiddleCenter;
         label.color = textColor;
         label.text = text ?? string.Empty;
@@ -399,9 +437,9 @@ public static class RuntimeUiFactory
         var labelRect = CreateRect("Text", parent);
 
         var label = labelRect.gameObject.AddComponent<Text>();
-        label.font = DefaultFont;
+        label.font = ResolveFont(fontStyle);
         label.fontSize = fontSize;
-        label.fontStyle = fontStyle;
+        label.fontStyle = NormalizeFontStyle(fontStyle);
         label.alignment = alignment;
         label.color = color;
         label.text = value ?? string.Empty;
@@ -445,5 +483,29 @@ public static class RuntimeUiFactory
         return ColorUtility.TryParseHtmlString(hex, out var color)
             ? color
             : Color.white;
+    }
+
+    private static Font ResolveFont(FontStyle fontStyle)
+    {
+        switch (fontStyle)
+        {
+            case FontStyle.Bold:
+            case FontStyle.BoldAndItalic:
+                return BoldFont != null ? BoldFont : DefaultFont;
+            default:
+                return DefaultFont;
+        }
+    }
+
+    private static FontStyle NormalizeFontStyle(FontStyle fontStyle)
+    {
+        switch (fontStyle)
+        {
+            case FontStyle.Bold:
+            case FontStyle.BoldAndItalic:
+                return FontStyle.Normal;
+            default:
+                return fontStyle;
+        }
     }
 }

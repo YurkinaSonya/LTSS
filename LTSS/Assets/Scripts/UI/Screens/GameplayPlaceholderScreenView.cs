@@ -420,7 +420,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
             var textColumn = CreateVerticalGroup(row, "TextColumn", 4f, TextAnchor.MiddleLeft);
             AddLayoutElement(textColumn.gameObject, flexibleWidth: 1f, preferredWidth: 360f);
             var title = RuntimeUiFactory.CreateBodyText(textColumn, string.Empty);
-            title.fontStyle = FontStyle.Bold;
+            RuntimeUiFactory.ApplyTextStyle(title, FontStyle.Bold);
             var metaRow = CreateRow(textColumn, "MetaRow", 8f, TextAnchor.MiddleLeft);
             var meta = RuntimeUiFactory.CreateCaption(metaRow, string.Empty);
             var requiredBadge = RuntimeUiFactory.CreateSurface("RequiredBadge", metaRow, RuntimeUiFactory.PrimarySoftColor, false);
@@ -493,7 +493,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
             layout.childForceExpandHeight = false;
 
             var title = RuntimeUiFactory.CreateBodyText(card, string.Empty);
-            title.fontStyle = FontStyle.Bold;
+            RuntimeUiFactory.ApplyTextStyle(title, FontStyle.Bold);
             var value = RuntimeUiFactory.CreateValueText(card, "0", 28, TextAnchor.MiddleLeft);
             var caption = RuntimeUiFactory.CreateCaption(card, string.Empty);
             RuntimeUiFactory.AddFlexibleSpacer(card);
