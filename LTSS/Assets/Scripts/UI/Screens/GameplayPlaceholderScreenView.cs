@@ -271,7 +271,9 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         Action<string> onExpenseSourceToggle)
     {
         var canEdit = runtimeState.FlowState != PeriodFlowState.PeriodCheckpointSubmitting
-            && runtimeState.FlowState != PeriodFlowState.PeriodClosed;
+            && runtimeState.FlowState != PeriodFlowState.PeriodClosed
+            && runtimeState.FlowState != PeriodFlowState.LoadingData
+            && runtimeState.FlowState != PeriodFlowState.PeriodClosing;
         RebuildExpenseRows(runtimeState.Definition.ExpenseDefinitions);
 
         foreach (var expenseDefinition in runtimeState.Definition.ExpenseDefinitions)
@@ -326,7 +328,9 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         Action<string, AssetOperationKind> onAssetAction)
     {
         var canEdit = runtimeState.FlowState != PeriodFlowState.PeriodCheckpointSubmitting
-            && runtimeState.FlowState != PeriodFlowState.PeriodClosed;
+            && runtimeState.FlowState != PeriodFlowState.PeriodClosed
+            && runtimeState.FlowState != PeriodFlowState.LoadingData
+            && runtimeState.FlowState != PeriodFlowState.PeriodClosing;
         RebuildAssetCards(runtimeState.Summary.AssetBalances);
 
         foreach (var asset in runtimeState.Summary.AssetBalances)
@@ -353,8 +357,9 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
     private void ApplyFooter(PeriodRuntimeState runtimeState)
     {
         var summary = runtimeState.Summary ?? PeriodCalculationSummary.Empty;
-        var canEdit = runtimeState.FlowState != PeriodFlowState.PeriodCheckpointSubmitting
-            && runtimeState.FlowState != PeriodFlowState.PeriodClosed;
+        var canEdit = runtimeState.FlowState == PeriodFlowState.PeriodIntro
+            || runtimeState.FlowState == PeriodFlowState.PeriodActive
+            || runtimeState.FlowState == PeriodFlowState.PeriodValidation;
 
         _completeButton.interactable = canEdit && summary.CanComplete;
 
@@ -443,7 +448,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
 
             var amountField = RuntimeUiFactory.CreateInputField(row, "0");
             amountField.contentType = InputField.ContentType.DecimalNumber;
-            AddLayoutElement(amountField.gameObject, minimumHeight: 22f, preferredWidth: 160f);
+            AddLayoutElement(amountField.gameObject, minimumHeight: 25f, preferredWidth: 160f);
 
             var sourceButton = RuntimeUiFactory.CreateSecondaryButton(row, "Источник", 46f);
             AddLayoutElement(sourceButton.gameObject, preferredWidth: 180f);
