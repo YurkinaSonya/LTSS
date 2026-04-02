@@ -9,6 +9,7 @@ import ltss.service.dto.admin.ParticipantAccountResponse;
 import ltss.service.dto.admin.ParticipantRunResponse;
 import ltss.service.dto.admin.SessionDefinitionRequest;
 import ltss.service.dto.admin.SessionDefinitionResponse;
+import ltss.service.dto.admin.SessionOverviewResponse;
 import ltss.service.service.SessionDefinitionAdminService;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -63,5 +64,10 @@ public class AdminSessionDefinitionController {
     @GetMapping("/{id}/runs")
     public List<ParticipantRunResponse> listRuns(@PathVariable Long id) {
         return sessionDefinitionAdminService.listRuns(id);
+    }
+
+    @GetMapping("/{id}/overview")
+    public SessionOverviewResponse getOverview(@PathVariable Long id) {
+        return sessionDefinitionAdminService.getOverview(id);
     }
 }

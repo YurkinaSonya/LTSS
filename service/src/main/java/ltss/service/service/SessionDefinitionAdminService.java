@@ -10,10 +10,13 @@ import ltss.service.dto.admin.ParticipantAccountResponse;
 import ltss.service.dto.admin.ParticipantRunResponse;
 import ltss.service.dto.admin.SessionDefinitionRequest;
 import ltss.service.dto.admin.SessionDefinitionResponse;
+import ltss.service.dto.admin.SessionOverviewResponse;
 import ltss.service.entity.ExperimentSessionDefinition;
 import ltss.service.entity.ParticipantAccount;
+import ltss.service.entity.ParticipantRun;
 import ltss.service.enums.GroupAssignmentStrategy;
 import ltss.service.enums.ParticipantAccountStatus;
+import ltss.service.enums.ParticipantRunStatus;
 import ltss.service.exception.BadRequestException;
 import ltss.service.exception.ConflictException;
 import ltss.service.exception.NotFoundException;
@@ -79,8 +82,8 @@ public class SessionDefinitionAdminService {
     @Transactional
     public List<GeneratedAccountCredentialResponse> generateAccounts(Long sessionDefinitionId, GenerateAccountsRequest request) {
         ExperimentSessionDefinition sessionDefinition = getSessionDefinition(sessionDefinitionId);
-        GroupAssignmentStrategy strategy = request.groupAssignmentStrategy() != null
-                ? request.groupAssignmentStrategy()
+        GroupAssignmentStrategy strategy = request.assignedGroupStrategy() != null
+                ? request.assignedGroupStrategy()
                 : GroupAssignmentStrategy.NONE;
         List<String> groupCodes = request.groupCodes() == null ? List.of() : request.groupCodes().stream()
                 .filter(StringUtils::hasText)
@@ -107,7 +110,7 @@ public class SessionDefinitionAdminService {
                     ? ParticipantAccountStatus.ASSIGNED
                     : ParticipantAccountStatus.NEW);
             account.setAssignedGroupCode(assignedGroupCode);
-            account.setAssignedConfigJson(buildAssignedConfigJson(assignedGroupCode));
+            account.setAssignedConfigJson(resolveAssignedConfigJson(assignedGroupCode, request.defaultAssignedConfigJson()));
 
             ParticipantAccount savedAccount = participantAccountRepository.save(account);
             createdAccounts.add(new GeneratedAccountCredentialResponse(
@@ -139,6 +142,30 @@ public class SessionDefinitionAdminService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public SessionOverviewResponse getOverview(Long sessionDefinitionId) {
+        ExperimentSessionDefinition sessionDefinition = getSessionDefinition(sessionDefinitionId);
+        long createdAccounts = participantAccountRepository.countBySessionDefinitionId(sessionDefinitionId);
+        List<ParticipantRun> runs = participantRunRepository
+                .findByParticipantAccount_SessionDefinition_IdOrderByCreatedAtDesc(sessionDefinitionId);
+
+        long startedRuns = runs.stream()
+                .filter(run -> run.getStartedAt() != null || run.getRunStatus() != ParticipantRunStatus.NEW)
+                .count();
+        long completedRuns = runs.stream()
+                .filter(run -> run.getRunStatus() == ParticipantRunStatus.COMPLETED)
+                .count();
+
+        return new SessionOverviewResponse(
+                sessionDefinition.getId(),
+                sessionDefinition.getCode(),
+                sessionDefinition.getParticipantCountPlanned(),
+                createdAccounts,
+                startedRuns,
+                completedRuns
+        );
+    }
+
     private ExperimentSessionDefinition getSessionDefinition(Long id) {
         return sessionDefinitionRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Session definition not found: " + id));
@@ -167,7 +194,10 @@ public class SessionDefinitionAdminService {
         return groupCodes.get(index % groupCodes.size());
     }
 
-    private String buildAssignedConfigJson(String assignedGroupCode) {
+    private String resolveAssignedConfigJson(String assignedGroupCode, String defaultAssignedConfigJson) {
+        if (StringUtils.hasText(defaultAssignedConfigJson)) {
+            return defaultAssignedConfigJson;
+        }
         if (!StringUtils.hasText(assignedGroupCode)) {
             return null;
         }

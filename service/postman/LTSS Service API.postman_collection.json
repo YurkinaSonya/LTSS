@@ -1,0 +1,750 @@
+﻿{
+  "info": {
+    "_postman_id": "c88f9b67-e61e-4ca8-a402-1c96a0269f6f",
+    "name": "LTSS Service API",
+    "description": "Коллекция для ручной работы с LTSS API. Актуализирована под отдельный admin login и защищенные /api/admin/** endpoint-ы.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Admin / Auth",
+      "item": [
+        {
+          "name": "Admin Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.token) { pm.environment.set('adminToken', data.token); }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{adminUsername}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Логин администратора. После успешного ответа adminToken сохраняется в environment."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin / Session Definitions",
+      "item": [
+        {
+          "name": "Create Session Definition",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.id) { pm.environment.set('sessionDefinitionId', data.id); }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"wave-2026-01\",\n  \"title\": \"Wave 2026 / Pilot\",\n  \"description\": \"Пилотная экспериментальная сессия\",\n  \"status\": \"ACTIVE\",\n  \"configVersion\": 1,\n  \"participantCountPlanned\": 24,\n  \"sessionConfigJson\": \"{\\\"periods\\\":[{\\\"number\\\":1,\\\"title\\\":\\\"Intro\\\"},{\\\"number\\\":2,\\\"title\\\":\\\"Main\\\"}],\\\"groupConfigs\\\":[{\\\"code\\\":\\\"control\\\"},{\\\"code\\\":\\\"nudge-a\\\"}],\\\"newsTexts\\\":[\\\"alpha\\\",\\\"beta\\\"]}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/session-definitions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "session-definitions"
+              ]
+            },
+            "description": "Создание новой экспериментальной сессии."
+          }
+        },
+        {
+          "name": "Update Session Definition",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"wave-2026-01\",\n  \"title\": \"Wave 2026 / Pilot Updated\",\n  \"description\": \"Обновлённая сессия для ручной проверки\",\n  \"status\": \"ACTIVE\",\n  \"configVersion\": 2,\n  \"participantCountPlanned\": 30,\n  \"sessionConfigJson\": \"{\\\"periods\\\":[{\\\"number\\\":1,\\\"title\\\":\\\"Intro\\\"},{\\\"number\\\":2,\\\"title\\\":\\\"Main\\\"},{\\\"number\\\":3,\\\"title\\\":\\\"Post\\\"}],\\\"groupConfigs\\\":[{\\\"code\\\":\\\"control\\\"},{\\\"code\\\":\\\"nudge-a\\\"}],\\\"unlockLogic\\\":{\\\"surveyAfterPeriod\\\":1}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/session-definitions/{{sessionDefinitionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "session-definitions",
+                "{{sessionDefinitionId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Session Definition",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/session-definitions/{{sessionDefinitionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "session-definitions",
+                "{{sessionDefinitionId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Session Definitions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/session-definitions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "session-definitions"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Generate Accounts",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
+                  "  const data = pm.response.json();",
+                  "  if (Array.isArray(data) && data.length > 0) {",
+                  "    pm.environment.set('participantLogin', data[0].login);",
+                  "    pm.environment.set('participantPassword', data[0].plainPassword);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"count\": 3,\n  \"assignedGroupStrategy\": \"ROUND_ROBIN\",\n  \"prefix\": \"pilot\",\n  \"groupCodes\": [\"control\", \"nudge-a\"],\n  \"defaultAssignedConfigJson\": \"{\\\"uiTheme\\\":\\\"default\\\",\\\"difficultyTier\\\":1}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/session-definitions/{{sessionDefinitionId}}/generate-accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "session-definitions",
+                "{{sessionDefinitionId}}",
+                "generate-accounts"
+              ]
+            },
+            "description": "Генерация тестовых учёток. Первая пара login/password сохранится в environment."
+          }
+        },
+        {
+          "name": "List Accounts By Session",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/session-definitions/{{sessionDefinitionId}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "session-definitions",
+                "{{sessionDefinitionId}}",
+                "accounts"
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Runs By Session",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/session-definitions/{{sessionDefinitionId}}/runs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "session-definitions",
+                "{{sessionDefinitionId}}",
+                "runs"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Session Overview",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/session-definitions/{{sessionDefinitionId}}/overview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "session-definitions",
+                "{{sessionDefinitionId}}",
+                "overview"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin / Surveys",
+      "item": [
+        {
+          "name": "Create Survey Template",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.id) { pm.environment.set('surveyTemplateId', data.id); }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sessionDefinitionId\": {{sessionDefinitionId}},\n  \"code\": \"pre-survey\",\n  \"title\": \"Pre Survey\",\n  \"type\": \"PRE\",\n  \"version\": 1,\n  \"templateJson\": \"{\\\"pages\\\":[{\\\"code\\\":\\\"intro\\\",\\\"questions\\\":[{\\\"id\\\":\\\"q1\\\",\\\"type\\\":\\\"single\\\",\\\"label\\\":\\\"How are you feeling today?\\\",\\\"options\\\":[\\\"good\\\",\\\"neutral\\\",\\\"bad\\\"]}]}]}\",\n  \"enabled\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/surveys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "surveys"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Survey Template",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sessionDefinitionId\": {{sessionDefinitionId}},\n  \"code\": \"pre-survey\",\n  \"title\": \"Pre Survey Updated\",\n  \"type\": \"PRE\",\n  \"version\": 2,\n  \"templateJson\": \"{\\\"pages\\\":[{\\\"code\\\":\\\"intro\\\",\\\"questions\\\":[{\\\"id\\\":\\\"q1\\\",\\\"type\\\":\\\"single\\\",\\\"label\\\":\\\"How are you feeling today?\\\",\\\"options\\\":[\\\"good\\\",\\\"neutral\\\",\\\"bad\\\"]},{\\\"id\\\":\\\"q2\\\",\\\"type\\\":\\\"text\\\",\\\"label\\\":\\\"Any notes?\\\"}]}]}\",\n  \"enabled\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/surveys/{{surveyTemplateId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "surveys",
+                "{{surveyTemplateId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Survey Templates",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/surveys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "surveys"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Participant",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.token) { pm.environment.set('runToken', data.token); }",
+                  "  if (data.run && data.run.runId) { pm.environment.set('runId', data.run.runId); }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"login\": \"{{participantLogin}}\",\n  \"password\": \"{{participantPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Current Run",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{runToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/run/current",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "run",
+                "current"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Bootstrap",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{runToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/run/{{runId}}/bootstrap",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "run",
+                "{{runId}}",
+                "bootstrap"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Submit Checkpoint",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{runToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"periodNumber\": 1,\n  \"checkpointJson\": \"{\\\"score\\\":120,\\\"choices\\\":[\\\"A\\\",\\\"B\\\"],\\\"tests\\\":[{\\\"id\\\":\\\"t1\\\",\\\"result\\\":\\\"pass\\\"}]}\",\n  \"summaryJson\": \"{\\\"period\\\":1,\\\"status\\\":\\\"completed\\\"}\",\n  \"submittedAt\": \"2026-03-31T12:00:00\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/run/{{runId}}/checkpoint",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "run",
+                "{{runId}}",
+                "checkpoint"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Submit Survey",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{runToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"surveyTemplateId\": {{surveyTemplateId}},\n  \"periodNumber\": 1,\n  \"responseJson\": \"{\\\"answers\\\":[{\\\"questionId\\\":\\\"q1\\\",\\\"value\\\":\\\"good\\\"}]}\",\n  \"submittedAt\": \"2026-03-31T12:05:00\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/run/{{runId}}/surveys/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "run",
+                "{{runId}}",
+                "surveys",
+                "submit"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Submit Log Batch",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{runToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"periodNumber\": 1,\n  \"batchType\": \"period-events\",\n  \"payloadJson\": \"{\\\"events\\\":[{\\\"type\\\":\\\"screen-open\\\",\\\"ts\\\":1711886400},{\\\"type\\\":\\\"choice-made\\\",\\\"value\\\":\\\"A\\\"}]}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/run/{{runId}}/logs/batch",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "run",
+                "{{runId}}",
+                "logs",
+                "batch"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Complete Run",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{runToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/run/{{runId}}/complete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "run",
+                "{{runId}}",
+                "complete"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin / Export",
+      "item": [
+        {
+          "name": "Export Summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/export/session-definition/{{sessionDefinitionId}}/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "export",
+                "session-definition",
+                "{{sessionDefinitionId}}",
+                "summary"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Export Checkpoints",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/export/session-definition/{{sessionDefinitionId}}/checkpoints",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "export",
+                "session-definition",
+                "{{sessionDefinitionId}}",
+                "checkpoints"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Export Surveys",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/export/session-definition/{{sessionDefinitionId}}/surveys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "export",
+                "session-definition",
+                "{{sessionDefinitionId}}",
+                "surveys"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Export Accounts Runs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/export/session-definition/{{sessionDefinitionId}}/accounts-runs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "export",
+                "session-definition",
+                "{{sessionDefinitionId}}",
+                "accounts-runs"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://tomcat.sonya.jij.li/ltss"
+    }
+  ]
+}

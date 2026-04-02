@@ -65,6 +65,7 @@ public class ParticipantMapper {
                 entity.getId(),
                 account.getId(),
                 account.getLogin(),
+                account.getAssignedGroupCode(),
                 account.getSessionDefinition().getCode(),
                 entity.getRunStatus(),
                 entity.getCurrentPeriodNumber(),

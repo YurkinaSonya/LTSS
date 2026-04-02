@@ -7,6 +7,7 @@ public record ParticipantRunResponse(
         String id,
         Long participantAccountId,
         String participantLogin,
+        String assignedGroupCode,
         String sessionDefinitionCode,
         ParticipantRunStatus runStatus,
         Integer currentPeriodNumber,
