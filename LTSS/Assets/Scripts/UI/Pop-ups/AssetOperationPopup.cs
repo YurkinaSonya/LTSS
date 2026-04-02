@@ -134,7 +134,7 @@ public sealed class AssetOperationPopup : Popup
             _sourceButton.interactable = canChangeSource;
         }
 
-        _limitLabel.text = $"Доступно: {dialog.MaxAmount.ToString("0.##")} ₽";
+        _limitLabel.text = $"Доступно: {EcuFormatter.FormatAmount(dialog.MaxAmount)}";
         SetMessage(runtimeState.StatusMessage);
 
         if (_amountInput != null && string.IsNullOrWhiteSpace(_amountInput.text) && dialog.SuggestedAmount > 0d)

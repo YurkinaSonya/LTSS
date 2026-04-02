@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Game.Core.Application.Logging;
 using Game.Core.Application.Networking;
+using UnityEngine;
 
 namespace Game.Core.Application.Session
 {
@@ -109,7 +110,8 @@ namespace Game.Core.Application.Session
                 ParseDocument(response.participant?.deviceBindingJson, "deviceBindingJson"));
 
             var templates = BuildSurveyTemplates(response.surveyTemplates);
-            var payload = new BootstrapPayload(bootstrapRun, session, participant, templates);
+            var dataset = BuildStatisticalDataset(response.statisticalDataset);
+            var payload = new BootstrapPayload(bootstrapRun, session, participant, templates, dataset);
 
             runtimeState = new ClientRuntimeState(
                 tokenData,
@@ -171,6 +173,57 @@ namespace Game.Core.Application.Session
             return result;
         }
 
+        private StatisticalDatasetRuntimeModel BuildStatisticalDataset(StatisticalDatasetDto source)
+        {
+            if (source == null)
+            {
+                return StatisticalDatasetRuntimeModel.Empty;
+            }
+
+            var document = ParseDocument(source.datasetJson, "statisticalDataset.datasetJson");
+            var periodStatisticsByPeriod = new Dictionary<int, PeriodStatisticsRuntime>();
+
+            if (document.IsValid && document.Root.Kind == JsonValueKind.Array)
+            {
+                foreach (var item in document.Root.ArrayValue)
+                {
+                    if (item == null || item.Kind != JsonValueKind.Object)
+                    {
+                        continue;
+                    }
+
+                    var periodNumber = ReadInt(item, "periodNumber", "period", "number");
+
+                    if (periodNumber <= 0 || periodStatisticsByPeriod.ContainsKey(periodNumber))
+                    {
+                        continue;
+                    }
+
+                    periodStatisticsByPeriod[periodNumber] = new PeriodStatisticsRuntime(
+                        periodNumber,
+                        ReadString(item, "historicalYear", "year", "historicalPeriodLabel"),
+                        ReadNumber(item, "nominalIncomeGrowth", "incomeGrowth", "salaryGrowth", "incomeGrowthRate"),
+                        ReadNumber(item, "inflation", "inflationRate"),
+                        ReadNumber(item, "depositRate", "depositInterestRate", "savingsRate"),
+                        ReadNumber(item, "creditRate"),
+                        ReadNumber(item, "mortgageRate"));
+                }
+            }
+
+            if (!document.IsEmpty && !document.IsValid)
+            {
+                _logger.Warning("Statistical dataset JSON is invalid. Runtime will use graceful fallbacks.");
+            }
+
+            return new StatisticalDatasetRuntimeModel(
+                source.id,
+                source.code,
+                source.title,
+                source.version,
+                document,
+                periodStatisticsByPeriod);
+        }
+
         private ParsedJsonDocument ParseDocument(string rawJson, string label)
         {
             if (string.IsNullOrWhiteSpace(rawJson))
@@ -185,6 +238,73 @@ namespace Game.Core.Application.Session
 
             _logger.Warning($"Failed to parse {label}. {error}");
             return new ParsedJsonDocument(rawJson, JsonValue.Null, false, false, error);
+        }
+
+        private static string ReadString(JsonValue node, params string[] propertyNames)
+        {
+            if (node == null || propertyNames == null)
+            {
+                return string.Empty;
+            }
+
+            foreach (var propertyName in propertyNames)
+            {
+                if (string.IsNullOrWhiteSpace(propertyName))
+                {
+                    continue;
+                }
+
+                if (node.TryGetProperty(propertyName, out var value))
+                {
+                    switch (value.Kind)
+                    {
+                        case JsonValueKind.String:
+                            return value.StringValue ?? string.Empty;
+                        case JsonValueKind.Number:
+                            return value.NumberValue.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+                    }
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private static double? ReadNumber(JsonValue node, params string[] propertyNames)
+        {
+            if (node == null || propertyNames == null)
+            {
+                return null;
+            }
+
+            foreach (var propertyName in propertyNames)
+            {
+                if (string.IsNullOrWhiteSpace(propertyName) || !node.TryGetProperty(propertyName, out var value))
+                {
+                    continue;
+                }
+
+                switch (value.Kind)
+                {
+                    case JsonValueKind.Number:
+                        return value.NumberValue;
+                    case JsonValueKind.String:
+                        if (double.TryParse(value.StringValue, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsed))
+                        {
+                            return parsed;
+                        }
+                        break;
+                }
+            }
+
+            return null;
+        }
+
+        private static int ReadInt(JsonValue node, params string[] propertyNames)
+        {
+            var number = ReadNumber(node, propertyNames);
+            return number.HasValue
+                ? Mathf.RoundToInt((float)number.Value)
+                : 0;
         }
     }
 }

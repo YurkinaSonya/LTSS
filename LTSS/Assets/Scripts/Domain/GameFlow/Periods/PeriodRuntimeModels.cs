@@ -75,7 +75,7 @@ namespace Game.Domain.GameFlow
             {
                 if (NumericValue.HasValue)
                 {
-                    var formatted = NumericValue.Value.ToString("0.##", CultureInfo.InvariantCulture);
+                    var formatted = NumericValue.Value.ToString("0.###", CultureInfo.InvariantCulture);
                     return string.IsNullOrWhiteSpace(Suffix)
                         ? formatted
                         : $"{formatted}{Suffix}";
@@ -97,6 +97,68 @@ namespace Game.Domain.GameFlow
             NumericValue = numericValue;
             Suffix = suffix ?? string.Empty;
             RawText = rawText ?? string.Empty;
+        }
+    }
+
+    public sealed class PeriodEconomyContext
+    {
+        public static PeriodEconomyContext Empty { get; } = new PeriodEconomyContext(
+            0,
+            string.Empty,
+            null,
+            null,
+            null,
+            null,
+            null,
+            100d,
+            100d,
+            1d,
+            1d,
+            1d,
+            1d);
+
+        public int CurrentPeriodNumber { get; }
+        public string HistoricalYear { get; }
+        public double? NominalIncomeGrowth { get; }
+        public double? Inflation { get; }
+        public double? DepositRate { get; }
+        public double? CreditRate { get; }
+        public double? MortgageRate { get; }
+        public double BaseIncomeEcu { get; }
+        public double CurrentIncomeEcu { get; }
+        public double ExpenseInflationMultiplier { get; }
+        public double CurrentInflationMultiplier { get; }
+        public double CashValueMultiplier { get; }
+        public double DepositValueMultiplier { get; }
+
+        public PeriodEconomyContext(
+            int currentPeriodNumber,
+            string historicalYear,
+            double? nominalIncomeGrowth,
+            double? inflation,
+            double? depositRate,
+            double? creditRate,
+            double? mortgageRate,
+            double baseIncomeEcu,
+            double currentIncomeEcu,
+            double expenseInflationMultiplier,
+            double currentInflationMultiplier,
+            double cashValueMultiplier,
+            double depositValueMultiplier)
+        {
+            CurrentPeriodNumber = currentPeriodNumber;
+            HistoricalYear = historicalYear ?? string.Empty;
+            NominalIncomeGrowth = nominalIncomeGrowth;
+            Inflation = inflation;
+            DepositRate = depositRate;
+            CreditRate = creditRate;
+            MortgageRate = mortgageRate;
+            BaseIncomeEcu = baseIncomeEcu;
+            CurrentIncomeEcu = currentIncomeEcu;
+            ExpenseInflationMultiplier = expenseInflationMultiplier;
+            CurrentInflationMultiplier = currentInflationMultiplier;
+            CashValueMultiplier = cashValueMultiplier;
+            DepositValueMultiplier = depositValueMultiplier;
         }
     }
 
@@ -197,15 +259,19 @@ namespace Game.Domain.GameFlow
     public sealed class PeriodCalculationSettings
     {
         public double DisposableIncome { get; }
+        public double CurrentIncomeEcu => DisposableIncome;
+        public double BaseIncomeEcu { get; }
         public double BaseUje { get; }
         public double MaximumUje { get; }
 
         public PeriodCalculationSettings(
-            double disposableIncome,
+            double currentIncomeEcu,
+            double baseIncomeEcu,
             double baseUje,
             double maximumUje)
         {
-            DisposableIncome = disposableIncome;
+            DisposableIncome = currentIncomeEcu;
+            BaseIncomeEcu = baseIncomeEcu;
             BaseUje = baseUje;
             MaximumUje = maximumUje;
         }
@@ -219,6 +285,7 @@ namespace Game.Domain.GameFlow
         public IReadOnlyList<PeriodAssetDefinition> AssetDefinitions { get; }
         public PeriodValidationSettings ValidationSettings { get; }
         public PeriodCalculationSettings CalculationSettings { get; }
+        public PeriodEconomyContext EconomyContext { get; }
         public double InitialCashBalance { get; }
         public double InitialDepositBalance { get; }
         public string SourceSummary { get; }
@@ -230,6 +297,7 @@ namespace Game.Domain.GameFlow
             IReadOnlyList<PeriodAssetDefinition> assetDefinitions,
             PeriodValidationSettings validationSettings,
             PeriodCalculationSettings calculationSettings,
+            PeriodEconomyContext economyContext,
             double initialCashBalance,
             double initialDepositBalance,
             string sourceSummary)
@@ -245,7 +313,8 @@ namespace Game.Domain.GameFlow
                 ? new List<PeriodAssetDefinition>(assetDefinitions)
                 : Array.Empty<PeriodAssetDefinition>();
             ValidationSettings = validationSettings ?? new PeriodValidationSettings(true, true, true, 0.01d, 0d);
-            CalculationSettings = calculationSettings ?? new PeriodCalculationSettings(0d, 0d, 100d);
+            CalculationSettings = calculationSettings ?? new PeriodCalculationSettings(0d, 100d, 0d, 100d);
+            EconomyContext = economyContext ?? PeriodEconomyContext.Empty;
             InitialCashBalance = initialCashBalance;
             InitialDepositBalance = initialDepositBalance;
             SourceSummary = sourceSummary ?? string.Empty;
@@ -394,12 +463,15 @@ namespace Game.Domain.GameFlow
             false);
 
         public double DisposableIncome { get; }
+        public double CurrentIncomeEcu => DisposableIncome;
         public double IncomeAllocatedToExpenses { get; }
         public double IncomeAllocatedToAssets { get; }
         public double TotalExpenses { get; }
         public double RemainingToAllocate { get; }
         public double CashBalance { get; }
+        public double EndingCashEcu => CashBalance;
         public double DepositBalance { get; }
+        public double EndingDepositEcu => DepositBalance;
         public double Uje { get; }
         public IReadOnlyList<UjeBreakdownItem> UjeBreakdown { get; }
         public IReadOnlyList<PeriodValidationIssue> ValidationIssues { get; }

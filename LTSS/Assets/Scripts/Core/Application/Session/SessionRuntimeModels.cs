@@ -184,24 +184,123 @@ namespace Game.Core.Application.Session
         }
     }
 
+    public sealed class PeriodStatisticsRuntime
+    {
+        public static PeriodStatisticsRuntime Empty { get; } = new PeriodStatisticsRuntime(
+            0,
+            string.Empty,
+            null,
+            null,
+            null,
+            null,
+            null);
+
+        public int PeriodNumber { get; }
+        public string HistoricalYear { get; }
+        public double? NominalIncomeGrowth { get; }
+        public double? Inflation { get; }
+        public double? DepositRate { get; }
+        public double? CreditRate { get; }
+        public double? MortgageRate { get; }
+        public bool HasValues =>
+            !string.IsNullOrWhiteSpace(HistoricalYear)
+            || NominalIncomeGrowth.HasValue
+            || Inflation.HasValue
+            || DepositRate.HasValue
+            || CreditRate.HasValue
+            || MortgageRate.HasValue;
+
+        public PeriodStatisticsRuntime(
+            int periodNumber,
+            string historicalYear,
+            double? nominalIncomeGrowth,
+            double? inflation,
+            double? depositRate,
+            double? creditRate,
+            double? mortgageRate)
+        {
+            PeriodNumber = periodNumber;
+            HistoricalYear = historicalYear ?? string.Empty;
+            NominalIncomeGrowth = nominalIncomeGrowth;
+            Inflation = inflation;
+            DepositRate = depositRate;
+            CreditRate = creditRate;
+            MortgageRate = mortgageRate;
+        }
+    }
+
+    public sealed class StatisticalDatasetRuntimeModel
+    {
+        public static StatisticalDatasetRuntimeModel Empty { get; } = new StatisticalDatasetRuntimeModel(
+            0,
+            string.Empty,
+            string.Empty,
+            0,
+            ParsedJsonDocument.Empty,
+            new Dictionary<int, PeriodStatisticsRuntime>());
+
+        public int Id { get; }
+        public string Code { get; }
+        public string Title { get; }
+        public int Version { get; }
+        public ParsedJsonDocument DatasetDocument { get; }
+        public IReadOnlyDictionary<int, PeriodStatisticsRuntime> PeriodStatisticsByPeriod { get; }
+        public bool HasDataset => Id > 0 || !string.IsNullOrWhiteSpace(Code) || PeriodStatisticsByPeriod.Count > 0;
+
+        public StatisticalDatasetRuntimeModel(
+            int id,
+            string code,
+            string title,
+            int version,
+            ParsedJsonDocument datasetDocument,
+            IReadOnlyDictionary<int, PeriodStatisticsRuntime> periodStatisticsByPeriod)
+        {
+            Id = id;
+            Code = code ?? string.Empty;
+            Title = title ?? string.Empty;
+            Version = version;
+            DatasetDocument = datasetDocument ?? ParsedJsonDocument.Empty;
+            PeriodStatisticsByPeriod = periodStatisticsByPeriod != null
+                ? new Dictionary<int, PeriodStatisticsRuntime>(periodStatisticsByPeriod)
+                : new Dictionary<int, PeriodStatisticsRuntime>();
+        }
+
+        public bool TryGetPeriodStatistics(int periodNumber, out PeriodStatisticsRuntime periodStatistics)
+        {
+            if (periodNumber > 0
+                && PeriodStatisticsByPeriod != null
+                && PeriodStatisticsByPeriod.TryGetValue(periodNumber, out periodStatistics)
+                && periodStatistics != null)
+            {
+                return true;
+            }
+
+            periodStatistics = PeriodStatisticsRuntime.Empty;
+            return false;
+        }
+    }
+
     public sealed class BootstrapPayload
     {
         public BootstrapRunRuntimeModel Run { get; }
         public SessionRuntimeModel Session { get; }
         public ParticipantRuntimeModel Participant { get; }
         public IReadOnlyList<SurveyTemplateRuntimeModel> SurveyTemplates { get; }
+        public StatisticalDatasetRuntimeModel StatisticalDataset { get; }
         public int BootstrapVersion => Run?.BootstrapVersion ?? 0;
 
         public BootstrapPayload(
             BootstrapRunRuntimeModel run,
             SessionRuntimeModel session,
             ParticipantRuntimeModel participant,
-            IReadOnlyList<SurveyTemplateRuntimeModel> surveyTemplates)
+            IReadOnlyList<SurveyTemplateRuntimeModel> surveyTemplates,
+            StatisticalDatasetRuntimeModel statisticalDataset)
         {
             Run = run;
             Session = session;
             Participant = participant;
             SurveyTemplates = surveyTemplates ?? Array.Empty<SurveyTemplateRuntimeModel>();
+            StatisticalDataset = statisticalDataset ?? StatisticalDatasetRuntimeModel.Empty;
         }
     }
 
@@ -290,6 +389,19 @@ namespace Game.Core.Application.Session
                     return definitions.Count;
                 }
 
+                if (Document.Root.TryGetProperty("periodConfigs", out var configs)
+                    && configs.Kind == JsonValueKind.Array)
+                {
+                    return configs.Count;
+                }
+
+                var descendantCount = FindDescendantArrayCount(Document.Root, "periods", "periodDefinitions", "periodConfigs");
+
+                if (descendantCount.HasValue)
+                {
+                    return descendantCount.Value;
+                }
+
                 return null;
             }
         }
@@ -297,6 +409,53 @@ namespace Game.Core.Application.Session
         public ParsedSessionConfigModel(ParsedJsonDocument document)
         {
             Document = document ?? ParsedJsonDocument.Empty;
+        }
+
+        private static int? FindDescendantArrayCount(JsonValue node, params string[] propertyNames)
+        {
+            if (node == null || propertyNames == null || propertyNames.Length == 0)
+            {
+                return null;
+            }
+
+            if (node.Kind == JsonValueKind.Object)
+            {
+                foreach (var propertyName in propertyNames)
+                {
+                    if (!string.IsNullOrWhiteSpace(propertyName)
+                        && node.TryGetProperty(propertyName, out var value)
+                        && value != null
+                        && value.Kind == JsonValueKind.Array)
+                    {
+                        return value.Count;
+                    }
+                }
+
+                foreach (var pair in node.ObjectValue)
+                {
+                    var nestedCount = FindDescendantArrayCount(pair.Value, propertyNames);
+
+                    if (nestedCount.HasValue)
+                    {
+                        return nestedCount.Value;
+                    }
+                }
+            }
+
+            if (node.Kind == JsonValueKind.Array)
+            {
+                foreach (var item in node.ArrayValue)
+                {
+                    var nestedCount = FindDescendantArrayCount(item, propertyNames);
+
+                    if (nestedCount.HasValue)
+                    {
+                        return nestedCount.Value;
+                    }
+                }
+            }
+
+            return null;
         }
     }
 

@@ -45,6 +45,7 @@ namespace Game.Core.Application.Session
         public SessionDefinitionDto session;
         public ParticipantDto participant;
         public SurveyTemplateDto[] surveyTemplates;
+        public StatisticalDatasetDto statisticalDataset;
     }
 
     [Serializable]
@@ -91,5 +92,15 @@ namespace Game.Core.Application.Session
         public string type;
         public int version;
         public string templateJson;
+    }
+
+    [Serializable]
+    public sealed class StatisticalDatasetDto
+    {
+        public int id;
+        public string code;
+        public string title;
+        public int version;
+        public string datasetJson;
     }
 }

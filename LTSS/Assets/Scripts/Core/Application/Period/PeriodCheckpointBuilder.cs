@@ -13,9 +13,18 @@ namespace Game.Core.Application.Periods
         public string periodId;
         public string title;
         public string historicalLabel;
+        public string currencyCode;
+        public string historicalYear;
+        public double nominalIncomeGrowth;
+        public double inflation;
+        public bool hasDepositRate;
+        public double depositRate;
         public double disposableIncome;
+        public double currentIncomeEcu;
         public double totalExpenses;
         public double remainingToAllocate;
+        public double endingCashEcu;
+        public double endingDepositEcu;
         public double uje;
         public PeriodCheckpointExpenseDto[] expenses;
         public PeriodCheckpointAssetDto[] assets;
@@ -67,9 +76,18 @@ namespace Game.Core.Application.Periods
     public sealed class PeriodCheckpointSummaryDto
     {
         public int periodNumber;
+        public string currencyCode;
+        public string historicalYear;
+        public double nominalIncomeGrowth;
+        public double inflation;
+        public bool hasDepositRate;
+        public double depositRate;
+        public double currentIncomeEcu;
         public double totalExpenses;
         public double cashBalance;
         public double depositBalance;
+        public double endingCashEcu;
+        public double endingDepositEcu;
         public double remainingToAllocate;
         public double uje;
         public int blockingIssueCount;
@@ -175,15 +193,25 @@ namespace Game.Core.Application.Periods
                 }
             }
 
+            var economyContext = runtimeState.Definition.EconomyContext ?? PeriodEconomyContext.Empty;
             var checkpointEnvelope = new PeriodCheckpointEnvelopeDto
             {
                 periodNumber = runtimeState.PeriodNumber,
                 periodId = runtimeState.Definition.Meta.PeriodId,
                 title = runtimeState.Definition.Meta.Title,
                 historicalLabel = runtimeState.Definition.Meta.HistoricalLabel,
+                currencyCode = "ECU",
+                historicalYear = economyContext.HistoricalYear,
+                nominalIncomeGrowth = economyContext.NominalIncomeGrowth ?? 0d,
+                inflation = economyContext.Inflation ?? 0d,
+                hasDepositRate = economyContext.DepositRate.HasValue,
+                depositRate = economyContext.DepositRate ?? 0d,
                 disposableIncome = summary.DisposableIncome,
+                currentIncomeEcu = summary.CurrentIncomeEcu,
                 totalExpenses = summary.TotalExpenses,
                 remainingToAllocate = summary.RemainingToAllocate,
+                endingCashEcu = summary.EndingCashEcu,
+                endingDepositEcu = summary.EndingDepositEcu,
                 uje = summary.Uje,
                 expenses = expenses.ToArray(),
                 assets = assets.ToArray(),
@@ -201,9 +229,18 @@ namespace Game.Core.Application.Periods
             var summaryPayload = new PeriodCheckpointSummaryDto
             {
                 periodNumber = runtimeState.PeriodNumber,
+                currencyCode = "ECU",
+                historicalYear = economyContext.HistoricalYear,
+                nominalIncomeGrowth = economyContext.NominalIncomeGrowth ?? 0d,
+                inflation = economyContext.Inflation ?? 0d,
+                hasDepositRate = economyContext.DepositRate.HasValue,
+                depositRate = economyContext.DepositRate ?? 0d,
+                currentIncomeEcu = summary.CurrentIncomeEcu,
                 totalExpenses = summary.TotalExpenses,
                 cashBalance = summary.CashBalance,
                 depositBalance = summary.DepositBalance,
+                endingCashEcu = summary.EndingCashEcu,
+                endingDepositEcu = summary.EndingDepositEcu,
                 remainingToAllocate = summary.RemainingToAllocate,
                 uje = summary.Uje,
                 blockingIssueCount = blockingIssueCount

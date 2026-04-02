@@ -273,7 +273,7 @@ public static class RuntimeUiFactory
         textComponent.alignment = TextAnchor.MiddleLeft;
         textComponent.supportRichText = false;
         textComponent.horizontalOverflow = HorizontalWrapMode.Overflow;
-        textComponent.verticalOverflow = VerticalWrapMode.Truncate;
+        textComponent.verticalOverflow = VerticalWrapMode.Overflow;
         textComponent.raycastTarget = false;
 
         var placeholderRect = CreateRect("Placeholder", fieldRect);
@@ -291,7 +291,7 @@ public static class RuntimeUiFactory
         placeholderText.text = placeholder;
         placeholderText.supportRichText = false;
         placeholderText.horizontalOverflow = HorizontalWrapMode.Overflow;
-        placeholderText.verticalOverflow = VerticalWrapMode.Truncate;
+        placeholderText.verticalOverflow = VerticalWrapMode.Overflow;
         placeholderText.raycastTarget = false;
 
         input.textComponent = textComponent;

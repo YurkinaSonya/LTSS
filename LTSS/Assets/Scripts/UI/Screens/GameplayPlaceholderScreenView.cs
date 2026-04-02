@@ -164,8 +164,8 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         AddLayoutElement(row.gameObject, preferredHeight: 126f);
 
         _ujeValueLabel = CreateMetricCard(row, "УЖЭ", "0");
-        _incomeValueLabel = CreateMetricCard(row, "Располагаемый доход", "0");
-        _remainingValueLabel = CreateMetricCard(row, "Осталось к распределению", "0");
+        _incomeValueLabel = CreateMetricCard(row, "Располагаемый доход, ECU", "0");
+        _remainingValueLabel = CreateMetricCard(row, "Осталось к распределению, ECU", "0");
     }
 
     private void BuildMain(Transform parent)
@@ -239,7 +239,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         var summary = runtimeState.Summary ?? PeriodCalculationSummary.Empty;
 
         _ujeValueLabel.text = summary.Uje.ToString("0.0", CultureInfo.InvariantCulture);
-        _incomeValueLabel.text = FormatMoney(summary.DisposableIncome);
+        _incomeValueLabel.text = FormatMoney(summary.CurrentIncomeEcu);
         _remainingValueLabel.text = FormatMoney(summary.RemainingToAllocate);
         _remainingValueLabel.color = summary.RemainingToAllocate < -0.01d
             ? RuntimeUiFactory.DangerColor
@@ -607,8 +607,8 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         return
             $"Фаза: {FormatFlow(runtimeState.FlowState)}\n" +
             $"Всего расходов: {FormatMoney(summary.TotalExpenses)}\n" +
-            $"Наличные: {FormatMoney(summary.CashBalance)}\n" +
-            $"Депозит: {FormatMoney(summary.DepositBalance)}";
+            $"Наличные: {FormatMoney(summary.EndingCashEcu)}\n" +
+            $"Депозит: {FormatMoney(summary.EndingDepositEcu)}";
     }
 
     private static string FirstIssueMessage(PeriodCalculationSummary summary)
@@ -631,7 +631,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
 
     private static string FormatMoney(double value)
     {
-        return $"{value.ToString("0.##", CultureInfo.InvariantCulture)} ₽";
+        return EcuFormatter.FormatAmount(value);
     }
 
     private static string FormatFlow(PeriodFlowState flowState)

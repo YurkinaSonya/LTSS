@@ -243,7 +243,8 @@ namespace Game.Core.Application.Session
                 nextBootstrapRun,
                 _currentRuntime.Bootstrap != null ? _currentRuntime.Bootstrap.Session : null,
                 _currentRuntime.Bootstrap != null ? _currentRuntime.Bootstrap.Participant : null,
-                _currentRuntime.Bootstrap != null ? _currentRuntime.Bootstrap.SurveyTemplates : null);
+                _currentRuntime.Bootstrap != null ? _currentRuntime.Bootstrap.SurveyTemplates : null,
+                _currentRuntime.Bootstrap != null ? _currentRuntime.Bootstrap.StatisticalDataset : null);
             var nextRuntime = new ClientRuntimeState(
                 _currentRuntime.AuthToken,
                 nextRunInfo,

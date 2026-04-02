@@ -112,7 +112,7 @@ namespace Game.Core.Application.Periods
                 ? Math.Min(definition.CalculationSettings.MaximumUje, uje)
                 : uje);
 
-            var remainingToAllocate = definition.CalculationSettings.DisposableIncome
+            var remainingToAllocate = definition.CalculationSettings.CurrentIncomeEcu
                 - incomeAllocatedToExpenses
                 - incomeAllocatedToAssets;
             var tolerance = Math.Max(0d, definition.ValidationSettings.CompletionRemainderTolerance);
@@ -161,7 +161,7 @@ namespace Game.Core.Application.Periods
             }
 
             return new PeriodCalculationSummary(
-                definition.CalculationSettings.DisposableIncome,
+                definition.CalculationSettings.CurrentIncomeEcu,
                 incomeAllocatedToExpenses,
                 incomeAllocatedToAssets,
                 totalExpenses,

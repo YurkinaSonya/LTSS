@@ -29,6 +29,10 @@ namespace Game.Core.Application.Periods
         private readonly IJsonSerializer _serializer;
 
         private PeriodRuntimeState _current = PeriodRuntimeState.Empty;
+        private string _pendingCarryOverRunId = string.Empty;
+        private int _pendingCarryOverTargetPeriodNumber;
+        private double _pendingCarryOverCashBalance;
+        private double _pendingCarryOverDepositBalance;
 
         public PeriodRuntimeState Current => _current;
 
@@ -79,6 +83,7 @@ namespace Game.Core.Application.Periods
             var clientRuntime = _sessionCoordinator != null
                 ? _sessionCoordinator.CurrentRuntime
                 : ClientRuntimeState.Empty;
+            var previousState = _current;
 
             if (clientRuntime == null || !clientRuntime.HasSession)
             {
@@ -90,33 +95,41 @@ namespace Game.Core.Application.Periods
                 ? clientRuntime.Bootstrap.Run.CurrentPeriodNumber
                 : 1;
 
+            if (!string.IsNullOrWhiteSpace(_pendingCarryOverRunId)
+                && string.Equals(_pendingCarryOverRunId, clientRuntime.AuthenticatedRun.RunId, StringComparison.Ordinal)
+                && _pendingCarryOverTargetPeriodNumber > targetPeriodNumber)
+            {
+                targetPeriodNumber = _pendingCarryOverTargetPeriodNumber;
+            }
+
             Publish(new PeriodRuntimeState(
                 clientRuntime.AuthenticatedRun.RunId,
                 targetPeriodNumber,
                 PeriodFlowState.LoadingData,
-                _current.Definition,
-                _current.Expenses,
-                _current.AssetOperations,
-                _current.Summary,
+                previousState.Definition,
+                previousState.Expenses,
+                previousState.AssetOperations,
+                previousState.Summary,
                 AssetOperationDialogState.Closed,
-                _current.IsCheckpointSubmitted,
+                previousState.IsCheckpointSubmitted,
                 "Подготовка периода...",
                 string.Empty,
-                _current.SubmittedAtUtc,
-                _current.HasPendingLocalChanges));
+                previousState.SubmittedAtUtc,
+                previousState.HasPendingLocalChanges));
 
-            if (_current.HasDefinition
-                && string.Equals(_current.RunId, clientRuntime.AuthenticatedRun.RunId, StringComparison.Ordinal)
-                && _current.PeriodNumber == targetPeriodNumber)
+            if (previousState.HasDefinition
+                && string.Equals(previousState.RunId, clientRuntime.AuthenticatedRun.RunId, StringComparison.Ordinal)
+                && previousState.PeriodNumber == targetPeriodNumber)
             {
-                Publish(_current.FlowState == PeriodFlowState.None
-                    ? _current.With(flowState: PeriodFlowState.PeriodActive)
-                    : _current);
+                Publish(previousState.FlowState == PeriodFlowState.None
+                    ? previousState.With(flowState: PeriodFlowState.PeriodActive)
+                    : previousState);
                 return;
             }
 
             if (_runtimeFactory.TryRestore(clientRuntime, LoadPersistedPeriodSnapshot(), out var restoredState, out _))
             {
+                restoredState = TryApplyPendingCarryOver(restoredState);
                 Publish(restoredState.With(
                     flowState: restoredState.IsCheckpointSubmitted
                         ? PeriodFlowState.PeriodClosed
@@ -147,6 +160,7 @@ namespace Game.Core.Application.Periods
             }
 
             createdState = createdState.With(flowState: PeriodFlowState.PeriodActive);
+            createdState = TryApplyPendingCarryOver(createdState);
             Publish(createdState);
             PersistCurrentState();
 
@@ -414,7 +428,7 @@ namespace Game.Core.Application.Periods
 
         public void SubmitPeriod()
         {
-            if (!_current.HasDefinition || _current.IsCheckpointSubmitted)
+            if (!_current.HasDefinition || _current.IsCheckpointSubmitted || !CanEditCurrentState())
             {
                 return;
             }
@@ -519,6 +533,8 @@ namespace Game.Core.Application.Periods
                         if (hasNextPeriod)
                         {
                             var nextPeriodNumber = _current.PeriodNumber + 1;
+                            StorePendingCarryOver(_current.RunId, nextPeriodNumber, _current.Summary);
+                            _persistenceService?.ClearPeriodSnapshot();
                             _sessionCoordinator?.UpdateLocalRunProgress(nextPeriodNumber, RunLifecycleStatus.InProgress);
                             ActivateCurrentPeriod();
                             return;
@@ -555,6 +571,7 @@ namespace Game.Core.Application.Periods
         public void ClearRuntime()
         {
             _current = PeriodRuntimeState.Empty;
+            ClearPendingCarryOver();
             _persistenceService?.ClearPeriodSnapshot();
             Changed?.Invoke(_current);
             _eventAggregator?.Publish(new EventsProvider.PeriodRuntimeChangedEvent(_current));
@@ -602,6 +619,9 @@ namespace Game.Core.Application.Periods
                 runId = _current.RunId,
                 periodNumber = _current.PeriodNumber,
                 flowState = PeriodContractMapper.ToPeriodFlowStateCode(_current.FlowState),
+                hasPersistedInitialBalances = true,
+                initialCashBalance = _current.Definition.InitialCashBalance,
+                initialDepositBalance = _current.Definition.InitialDepositBalance,
                 expenses = BuildExpenseSnapshots(_current.Expenses),
                 assetOperations = BuildOperationSnapshots(_current.AssetOperations),
                 isCheckpointSubmitted = _current.IsCheckpointSubmitted,
@@ -861,17 +881,17 @@ namespace Game.Core.Application.Periods
             var title = definition != null && !string.IsNullOrWhiteSpace(definition.Title)
                 ? $"«{definition.Title}»"
                 : "этой статьи";
-            var availableText = availableAmount.ToString("0.##", CultureInfo.InvariantCulture);
+            var availableText = EcuFormatter.FormatAmount(availableAmount);
 
             switch (source)
             {
                 case FundsSourceType.Cash:
-                    return $"Для {title} не хватает наличных. Доступно: {availableText} ₽.";
+                    return $"Для {title} не хватает наличных. Доступно: {availableText}.";
                 case FundsSourceType.Deposit:
-                    return $"Для {title} не хватает средств на депозите. Доступно: {availableText} ₽.";
+                    return $"Для {title} не хватает средств на депозите. Доступно: {availableText}.";
                 case FundsSourceType.CurrentIncome:
                 default:
-                    return $"Для {title} не хватает располагаемого дохода. Осталось распределить: {availableText} ₽.";
+                    return $"Для {title} не хватает располагаемого дохода. Осталось распределить: {availableText}.";
             }
         }
 
@@ -1023,8 +1043,9 @@ namespace Game.Core.Application.Periods
         {
             return _current != null
                    && !_current.IsCheckpointSubmitted
-                   && _current.FlowState != PeriodFlowState.PeriodCheckpointSubmitting
-                   && _current.FlowState != PeriodFlowState.PeriodClosed;
+                   && (_current.FlowState == PeriodFlowState.PeriodIntro
+                       || _current.FlowState == PeriodFlowState.PeriodActive
+                       || _current.FlowState == PeriodFlowState.PeriodValidation);
         }
 
         private void OnApplicationStateChanged(ApplicationStateSnapshot snapshot)
@@ -1049,6 +1070,89 @@ namespace Game.Core.Application.Periods
             {
                 Publish(_current.With(assetDialog: AssetOperationDialogState.Closed, statusMessage: string.Empty));
             }
+        }
+
+        private void StorePendingCarryOver(string runId, int targetPeriodNumber, PeriodCalculationSummary summary)
+        {
+            _pendingCarryOverRunId = runId ?? string.Empty;
+            _pendingCarryOverTargetPeriodNumber = targetPeriodNumber > 0 ? targetPeriodNumber : 0;
+            _pendingCarryOverCashBalance = summary != null ? Math.Max(0d, summary.CashBalance) : 0d;
+            _pendingCarryOverDepositBalance = summary != null ? Math.Max(0d, summary.DepositBalance) : 0d;
+        }
+
+        private void ClearPendingCarryOver()
+        {
+            _pendingCarryOverRunId = string.Empty;
+            _pendingCarryOverTargetPeriodNumber = 0;
+            _pendingCarryOverCashBalance = 0d;
+            _pendingCarryOverDepositBalance = 0d;
+        }
+
+        private PeriodRuntimeState TryApplyPendingCarryOver(PeriodRuntimeState state)
+        {
+            if (state == null
+                || !state.HasDefinition
+                || string.IsNullOrWhiteSpace(_pendingCarryOverRunId)
+                || _pendingCarryOverTargetPeriodNumber <= 0
+                || !string.Equals(state.RunId, _pendingCarryOverRunId, StringComparison.Ordinal)
+                || state.PeriodNumber != _pendingCarryOverTargetPeriodNumber)
+            {
+                return state;
+            }
+
+            var currentDefinition = state.Definition;
+            var adjustedInitialCashBalance = ApplyCarryOverMultiplier(
+                _pendingCarryOverCashBalance,
+                currentDefinition.EconomyContext != null
+                    ? currentDefinition.EconomyContext.CashValueMultiplier
+                    : 1d);
+            var adjustedInitialDepositBalance = ApplyCarryOverMultiplier(
+                _pendingCarryOverDepositBalance,
+                currentDefinition.EconomyContext != null
+                    ? currentDefinition.EconomyContext.DepositValueMultiplier
+                    : 1d);
+            var nextDefinition = new PeriodRuntimeDefinition(
+                currentDefinition.Meta,
+                currentDefinition.InfoBlockValues,
+                currentDefinition.ExpenseDefinitions,
+                currentDefinition.AssetDefinitions,
+                currentDefinition.ValidationSettings,
+                currentDefinition.CalculationSettings,
+                currentDefinition.EconomyContext,
+                adjustedInitialCashBalance,
+                adjustedInitialDepositBalance,
+                currentDefinition.SourceSummary);
+            var nextSummary = _calculationEngine.Recalculate(
+                nextDefinition,
+                state.Expenses,
+                state.AssetOperations);
+            var nextState = new PeriodRuntimeState(
+                state.RunId,
+                state.PeriodNumber,
+                state.FlowState,
+                nextDefinition,
+                state.Expenses,
+                state.AssetOperations,
+                nextSummary,
+                state.AssetDialog,
+                state.IsCheckpointSubmitted,
+                state.StatusMessage,
+                state.LastError,
+                state.SubmittedAtUtc,
+                state.HasPendingLocalChanges);
+
+            ClearPendingCarryOver();
+            return nextState;
+        }
+
+        private static double ApplyCarryOverMultiplier(double amount, double multiplier)
+        {
+            if (amount <= 0d)
+            {
+                return 0d;
+            }
+
+            return Math.Max(0d, amount * Math.Max(0d, multiplier));
         }
     }
 }
