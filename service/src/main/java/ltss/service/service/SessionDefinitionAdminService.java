@@ -41,6 +41,7 @@ public class SessionDefinitionAdminService {
     private final SessionDefinitionMapper sessionDefinitionMapper;
     private final ParticipantMapper participantMapper;
     private final PasswordService passwordService;
+    private final StatisticalDatasetAdminService statisticalDatasetAdminService;
 
     private final SecureRandom secureRandom = new SecureRandom();
 
@@ -52,6 +53,7 @@ public class SessionDefinitionAdminService {
 
         ExperimentSessionDefinition entity = new ExperimentSessionDefinition();
         sessionDefinitionMapper.updateEntity(entity, request);
+        entity.setStatisticalDataset(resolveStatisticalDataset(request.statisticalDatasetId()));
         return sessionDefinitionMapper.toResponse(sessionDefinitionRepository.save(entity));
     }
 
@@ -63,6 +65,7 @@ public class SessionDefinitionAdminService {
         }
 
         sessionDefinitionMapper.updateEntity(entity, request);
+        entity.setStatisticalDataset(resolveStatisticalDataset(request.statisticalDatasetId()));
         return sessionDefinitionMapper.toResponse(sessionDefinitionRepository.save(entity));
     }
 
@@ -169,6 +172,13 @@ public class SessionDefinitionAdminService {
     private ExperimentSessionDefinition getSessionDefinition(Long id) {
         return sessionDefinitionRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Session definition not found: " + id));
+    }
+
+    private ltss.service.entity.StatisticalDataset resolveStatisticalDataset(Long statisticalDatasetId) {
+        if (statisticalDatasetId == null) {
+            return null;
+        }
+        return statisticalDatasetAdminService.getDatasetEntity(statisticalDatasetId);
     }
 
     private String sanitizePrefix(String requestedPrefix, String fallbackPrefix) {

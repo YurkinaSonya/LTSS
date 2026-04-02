@@ -6,6 +6,7 @@ public record BootstrapResponse(
         BootstrapRunResponse run,
         BootstrapSessionResponse session,
         BootstrapParticipantResponse participant,
+        BootstrapStatisticalDatasetResponse statisticalDataset,
         List<BootstrapSurveyTemplateResponse> surveyTemplates
 ) {
 }

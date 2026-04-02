@@ -10,6 +10,7 @@ public record BootstrapSessionResponse(
         ExperimentSessionStatus status,
         Integer configVersion,
         Integer participantCountPlanned,
+        Long statisticalDatasetId,
         String sessionConfigJson
 ) {
 }

@@ -4,10 +4,13 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import ltss.service.enums.ExperimentSessionStatus;
@@ -24,7 +27,8 @@ import lombok.Setter;
         uniqueConstraints = @UniqueConstraint(name = "uk_session_definition_code", columnNames = "code"),
         indexes = {
                 @Index(name = "idx_session_definition_code", columnList = "code"),
-                @Index(name = "idx_session_definition_status", columnList = "status")
+                @Index(name = "idx_session_definition_status", columnList = "status"),
+                @Index(name = "idx_session_definition_statistical_dataset_id", columnList = "statistical_dataset_id")
         }
 )
 public class ExperimentSessionDefinition extends CreatedUpdatedAtEntity {
@@ -51,6 +55,10 @@ public class ExperimentSessionDefinition extends CreatedUpdatedAtEntity {
 
     @Column(name = "participant_count_planned")
     private Integer participantCountPlanned;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "statistical_dataset_id")
+    private StatisticalDataset statisticalDataset;
 
     @Column(name = "session_config_json", nullable = false, columnDefinition = "longtext")
     private String sessionConfigJson;

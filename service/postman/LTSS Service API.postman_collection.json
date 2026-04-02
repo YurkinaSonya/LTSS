@@ -1,750 +1,885 @@
-﻿{
-  "info": {
-    "_postman_id": "c88f9b67-e61e-4ca8-a402-1c96a0269f6f",
-    "name": "LTSS Service API",
-    "description": "Коллекция для ручной работы с LTSS API. Актуализирована под отдельный admin login и защищенные /api/admin/** endpoint-ы.",
-    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
-  },
-  "item": [
-    {
-      "name": "Admin / Auth",
-      "item": [
-        {
-          "name": "Admin Login",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
-                  "  const data = pm.response.json();",
-                  "  if (data.token) { pm.environment.set('adminToken', data.token); }",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"username\": \"{{adminUsername}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/auth/login",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "auth",
-                "login"
-              ]
-            },
-            "description": "Логин администратора. После успешного ответа adminToken сохраняется в environment."
-          }
-        }
-      ]
-    },
-    {
-      "name": "Admin / Session Definitions",
-      "item": [
-        {
-          "name": "Create Session Definition",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
-                  "  const data = pm.response.json();",
-                  "  if (data.id) { pm.environment.set('sessionDefinitionId', data.id); }",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{adminToken}}"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"code\": \"wave-2026-01\",\n  \"title\": \"Wave 2026 / Pilot\",\n  \"description\": \"Пилотная экспериментальная сессия\",\n  \"status\": \"ACTIVE\",\n  \"configVersion\": 1,\n  \"participantCountPlanned\": 24,\n  \"sessionConfigJson\": \"{\\\"periods\\\":[{\\\"number\\\":1,\\\"title\\\":\\\"Intro\\\"},{\\\"number\\\":2,\\\"title\\\":\\\"Main\\\"}],\\\"groupConfigs\\\":[{\\\"code\\\":\\\"control\\\"},{\\\"code\\\":\\\"nudge-a\\\"}],\\\"newsTexts\\\":[\\\"alpha\\\",\\\"beta\\\"]}\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/session-definitions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "session-definitions"
-              ]
-            },
-            "description": "Создание новой экспериментальной сессии."
-          }
-        },
-        {
-          "name": "Update Session Definition",
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{adminToken}}"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"code\": \"wave-2026-01\",\n  \"title\": \"Wave 2026 / Pilot Updated\",\n  \"description\": \"Обновлённая сессия для ручной проверки\",\n  \"status\": \"ACTIVE\",\n  \"configVersion\": 2,\n  \"participantCountPlanned\": 30,\n  \"sessionConfigJson\": \"{\\\"periods\\\":[{\\\"number\\\":1,\\\"title\\\":\\\"Intro\\\"},{\\\"number\\\":2,\\\"title\\\":\\\"Main\\\"},{\\\"number\\\":3,\\\"title\\\":\\\"Post\\\"}],\\\"groupConfigs\\\":[{\\\"code\\\":\\\"control\\\"},{\\\"code\\\":\\\"nudge-a\\\"}],\\\"unlockLogic\\\":{\\\"surveyAfterPeriod\\\":1}}\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/session-definitions/{{sessionDefinitionId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "session-definitions",
-                "{{sessionDefinitionId}}"
-              ]
-            }
-          }
-        },
-        {
-          "name": "Get Session Definition",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{adminToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/session-definitions/{{sessionDefinitionId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "session-definitions",
-                "{{sessionDefinitionId}}"
-              ]
-            }
-          }
-        },
-        {
-          "name": "List Session Definitions",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{adminToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/session-definitions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "session-definitions"
-              ]
-            }
-          }
-        },
-        {
-          "name": "Generate Accounts",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
-                  "  const data = pm.response.json();",
-                  "  if (Array.isArray(data) && data.length > 0) {",
-                  "    pm.environment.set('participantLogin', data[0].login);",
-                  "    pm.environment.set('participantPassword', data[0].plainPassword);",
-                  "  }",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{adminToken}}"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"count\": 3,\n  \"assignedGroupStrategy\": \"ROUND_ROBIN\",\n  \"prefix\": \"pilot\",\n  \"groupCodes\": [\"control\", \"nudge-a\"],\n  \"defaultAssignedConfigJson\": \"{\\\"uiTheme\\\":\\\"default\\\",\\\"difficultyTier\\\":1}\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/session-definitions/{{sessionDefinitionId}}/generate-accounts",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "session-definitions",
-                "{{sessionDefinitionId}}",
-                "generate-accounts"
-              ]
-            },
-            "description": "Генерация тестовых учёток. Первая пара login/password сохранится в environment."
-          }
-        },
-        {
-          "name": "List Accounts By Session",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{adminToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/session-definitions/{{sessionDefinitionId}}/accounts",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "session-definitions",
-                "{{sessionDefinitionId}}",
-                "accounts"
-              ]
-            }
-          }
-        },
-        {
-          "name": "List Runs By Session",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{adminToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/session-definitions/{{sessionDefinitionId}}/runs",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "session-definitions",
-                "{{sessionDefinitionId}}",
-                "runs"
-              ]
-            }
-          }
-        },
-        {
-          "name": "Get Session Overview",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{adminToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/session-definitions/{{sessionDefinitionId}}/overview",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "session-definitions",
-                "{{sessionDefinitionId}}",
-                "overview"
-              ]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "Admin / Surveys",
-      "item": [
-        {
-          "name": "Create Survey Template",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
-                  "  const data = pm.response.json();",
-                  "  if (data.id) { pm.environment.set('surveyTemplateId', data.id); }",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{adminToken}}"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"sessionDefinitionId\": {{sessionDefinitionId}},\n  \"code\": \"pre-survey\",\n  \"title\": \"Pre Survey\",\n  \"type\": \"PRE\",\n  \"version\": 1,\n  \"templateJson\": \"{\\\"pages\\\":[{\\\"code\\\":\\\"intro\\\",\\\"questions\\\":[{\\\"id\\\":\\\"q1\\\",\\\"type\\\":\\\"single\\\",\\\"label\\\":\\\"How are you feeling today?\\\",\\\"options\\\":[\\\"good\\\",\\\"neutral\\\",\\\"bad\\\"]}]}]}\",\n  \"enabled\": true\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/surveys",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "surveys"
-              ]
-            }
-          }
-        },
-        {
-          "name": "Update Survey Template",
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{adminToken}}"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"sessionDefinitionId\": {{sessionDefinitionId}},\n  \"code\": \"pre-survey\",\n  \"title\": \"Pre Survey Updated\",\n  \"type\": \"PRE\",\n  \"version\": 2,\n  \"templateJson\": \"{\\\"pages\\\":[{\\\"code\\\":\\\"intro\\\",\\\"questions\\\":[{\\\"id\\\":\\\"q1\\\",\\\"type\\\":\\\"single\\\",\\\"label\\\":\\\"How are you feeling today?\\\",\\\"options\\\":[\\\"good\\\",\\\"neutral\\\",\\\"bad\\\"]},{\\\"id\\\":\\\"q2\\\",\\\"type\\\":\\\"text\\\",\\\"label\\\":\\\"Any notes?\\\"}]}]}\",\n  \"enabled\": true\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/surveys/{{surveyTemplateId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "surveys",
-                "{{surveyTemplateId}}"
-              ]
-            }
-          }
-        },
-        {
-          "name": "List Survey Templates",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{adminToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/surveys",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "surveys"
-              ]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "Participant",
-      "item": [
-        {
-          "name": "Login",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
-                  "  const data = pm.response.json();",
-                  "  if (data.token) { pm.environment.set('runToken', data.token); }",
-                  "  if (data.run && data.run.runId) { pm.environment.set('runId', data.run.runId); }",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"login\": \"{{participantLogin}}\",\n  \"password\": \"{{participantPassword}}\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/login",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "login"
-              ]
-            }
-          }
-        },
-        {
-          "name": "Get Current Run",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{runToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/run/current",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "run",
-                "current"
-              ]
-            }
-          }
-        },
-        {
-          "name": "Get Bootstrap",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{runToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/run/{{runId}}/bootstrap",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "run",
-                "{{runId}}",
-                "bootstrap"
-              ]
-            }
-          }
-        },
-        {
-          "name": "Submit Checkpoint",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{runToken}}"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"periodNumber\": 1,\n  \"checkpointJson\": \"{\\\"score\\\":120,\\\"choices\\\":[\\\"A\\\",\\\"B\\\"],\\\"tests\\\":[{\\\"id\\\":\\\"t1\\\",\\\"result\\\":\\\"pass\\\"}]}\",\n  \"summaryJson\": \"{\\\"period\\\":1,\\\"status\\\":\\\"completed\\\"}\",\n  \"submittedAt\": \"2026-03-31T12:00:00\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/run/{{runId}}/checkpoint",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "run",
-                "{{runId}}",
-                "checkpoint"
-              ]
-            }
-          }
-        },
-        {
-          "name": "Submit Survey",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{runToken}}"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"surveyTemplateId\": {{surveyTemplateId}},\n  \"periodNumber\": 1,\n  \"responseJson\": \"{\\\"answers\\\":[{\\\"questionId\\\":\\\"q1\\\",\\\"value\\\":\\\"good\\\"}]}\",\n  \"submittedAt\": \"2026-03-31T12:05:00\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/run/{{runId}}/surveys/submit",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "run",
-                "{{runId}}",
-                "surveys",
-                "submit"
-              ]
-            }
-          }
-        },
-        {
-          "name": "Submit Log Batch",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{runToken}}"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"periodNumber\": 1,\n  \"batchType\": \"period-events\",\n  \"payloadJson\": \"{\\\"events\\\":[{\\\"type\\\":\\\"screen-open\\\",\\\"ts\\\":1711886400},{\\\"type\\\":\\\"choice-made\\\",\\\"value\\\":\\\"A\\\"}]}\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/run/{{runId}}/logs/batch",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "run",
-                "{{runId}}",
-                "logs",
-                "batch"
-              ]
-            }
-          }
-        },
-        {
-          "name": "Complete Run",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{runToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/run/{{runId}}/complete",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "run",
-                "{{runId}}",
-                "complete"
-              ]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "Admin / Export",
-      "item": [
-        {
-          "name": "Export Summary",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{adminToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/export/session-definition/{{sessionDefinitionId}}/summary",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "export",
-                "session-definition",
-                "{{sessionDefinitionId}}",
-                "summary"
-              ]
-            }
-          }
-        },
-        {
-          "name": "Export Checkpoints",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{adminToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/export/session-definition/{{sessionDefinitionId}}/checkpoints",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "export",
-                "session-definition",
-                "{{sessionDefinitionId}}",
-                "checkpoints"
-              ]
-            }
-          }
-        },
-        {
-          "name": "Export Surveys",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{adminToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/export/session-definition/{{sessionDefinitionId}}/surveys",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "export",
-                "session-definition",
-                "{{sessionDefinitionId}}",
-                "surveys"
-              ]
-            }
-          }
-        },
-        {
-          "name": "Export Accounts Runs",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{adminToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/export/session-definition/{{sessionDefinitionId}}/accounts-runs",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "export",
-                "session-definition",
-                "{{sessionDefinitionId}}",
-                "accounts-runs"
-              ]
-            }
-          }
-        }
-      ]
-    }
-  ],
-  "variable": [
-    {
-      "key": "baseUrl",
-      "value": "https://tomcat.sonya.jij.li/ltss"
-    }
-  ]
+{
+    "info":  {
+                 "_postman_id":  "c88f9b67-e61e-4ca8-a402-1c96a0269f6f",
+                 "name":  "LTSS Service API",
+                 "description":  "Коллекция для ручной работы с LTSS API. Актуализирована под отдельный admin login, statistical datasets и привязку dataset к session definition через statisticalDatasetId.",
+                 "schema":  "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+             },
+    "item":  [
+                 {
+                     "name":  "Admin / Auth",
+                     "item":  [
+                                  {
+                                      "name":  "Admin Login",
+                                      "event":  [
+                                                    {
+                                                        "listen":  "test",
+                                                        "script":  {
+                                                                       "type":  "text/javascript",
+                                                                       "exec":  [
+                                                                                    "if (pm.response.code \u003e= 200 \u0026\u0026 pm.response.code \u003c 300) {",
+                                                                                    "  const data = pm.response.json();",
+                                                                                    "  if (data.token) { pm.environment.set(\"adminToken\", data.token); }",
+                                                                                    "}"
+                                                                                ]
+                                                                   }
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{baseUrl}}/api/admin/auth/login",
+                                                                  "host":  [
+                                                                               "{{baseUrl}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "admin",
+                                                                               "auth",
+                                                                               "login"
+                                                                           ]
+                                                              },
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{\n  \"username\": \"{{adminUsername}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+                                                               },
+                                                      "description":  "Логин администратора. После успешного ответа adminToken сохраняется в environment."
+                                                  }
+                                  }
+                              ]
+                 },
+                 {
+                     "name":  "Admin / Session Definitions",
+                     "item":  [
+                                  {
+                                      "name":  "Create Session Definition",
+                                      "event":  [
+                                                    {
+                                                        "listen":  "test",
+                                                        "script":  {
+                                                                       "type":  "text/javascript",
+                                                                       "exec":  [
+                                                                                    "if (pm.response.code \u003e= 200 \u0026\u0026 pm.response.code \u003c 300) {",
+                                                                                    "  const data = pm.response.json();",
+                                                                                    "  if (data.id) { pm.environment.set(\"sessionDefinitionId\", data.id); }",
+                                                                                    "}"
+                                                                                ]
+                                                                   }
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     },
+                                                                     {
+                                                                         "key":  "Authorization",
+                                                                         "value":  "Bearer {{adminToken}}"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{baseUrl}}/api/admin/session-definitions",
+                                                                  "host":  [
+                                                                               "{{baseUrl}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "admin",
+                                                                               "session-definitions"
+                                                                           ]
+                                                              },
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{\n  \"code\": \"wave-2026-01\",\n  \"title\": \"Wave 2026 / Pilot\",\n  \"description\": \"Пилотная экспериментальная сессия\",\n  \"status\": \"ACTIVE\",\n  \"configVersion\": 1,\n  \"participantCountPlanned\": 24,\n  \"statisticalDatasetId\": {{statisticalDatasetId}},\n  \"sessionConfigJson\": \"{\\\"periods\\\":[{\\\"number\\\":1,\\\"title\\\":\\\"Intro\\\"},{\\\"number\\\":2,\\\"title\\\":\\\"Main\\\"}],\\\"groupConfigs\\\":[{\\\"code\\\":\\\"control\\\"},{\\\"code\\\":\\\"nudge-a\\\"}],\\\"newsTexts\\\":[\\\"alpha\\\",\\\"beta\\\"]}\"\n}"
+                                                               },
+                                                      "description":  "Создание новой экспериментальной сессии. Нужный датасет указывается именно здесь, в поле `statisticalDatasetId`."
+                                                  }
+                                  },
+                                  {
+                                      "name":  "Update Session Definition",
+                                      "request":  {
+                                                      "method":  "PUT",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     },
+                                                                     {
+                                                                         "key":  "Authorization",
+                                                                         "value":  "Bearer {{adminToken}}"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{baseUrl}}/api/admin/session-definitions/{{sessionDefinitionId}}",
+                                                                  "host":  [
+                                                                               "{{baseUrl}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "admin",
+                                                                               "session-definitions",
+                                                                               "{{sessionDefinitionId}}"
+                                                                           ]
+                                                              },
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{\n  \"code\": \"wave-2026-01\",\n  \"title\": \"Wave 2026 / Pilot Updated\",\n  \"description\": \"Обновлённая сессия для ручной проверки\",\n  \"status\": \"ACTIVE\",\n  \"configVersion\": 2,\n  \"participantCountPlanned\": 30,\n  \"statisticalDatasetId\": {{statisticalDatasetId}},\n  \"sessionConfigJson\": \"{\\\"periods\\\":[{\\\"number\\\":1,\\\"title\\\":\\\"Intro\\\"},{\\\"number\\\":2,\\\"title\\\":\\\"Main\\\"},{\\\"number\\\":3,\\\"title\\\":\\\"Post\\\"}],\\\"groupConfigs\\\":[{\\\"code\\\":\\\"control\\\"},{\\\"code\\\":\\\"nudge-a\\\"}],\\\"unlockLogic\\\":{\\\"surveyAfterPeriod\\\":1}}\"\n}"
+                                                               },
+                                                      "description":  "Обновление существующей сессии. Нужный датасет меняется именно здесь, в поле `statisticalDatasetId`."
+                                                  }
+                                  },
+                                  {
+                                      "name":  "Get Session Definition",
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Authorization",
+                                                                         "value":  "Bearer {{adminToken}}"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{baseUrl}}/api/admin/session-definitions/{{sessionDefinitionId}}",
+                                                                  "host":  [
+                                                                               "{{baseUrl}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "admin",
+                                                                               "session-definitions",
+                                                                               "{{sessionDefinitionId}}"
+                                                                           ]
+                                                              }
+                                                  }
+                                  },
+                                  {
+                                      "name":  "List Session Definitions",
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Authorization",
+                                                                         "value":  "Bearer {{adminToken}}"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{baseUrl}}/api/admin/session-definitions",
+                                                                  "host":  [
+                                                                               "{{baseUrl}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "admin",
+                                                                               "session-definitions"
+                                                                           ]
+                                                              }
+                                                  }
+                                  },
+                                  {
+                                      "name":  "Generate Accounts",
+                                      "event":  [
+                                                    {
+                                                        "listen":  "test",
+                                                        "script":  {
+                                                                       "type":  "text/javascript",
+                                                                       "exec":  [
+                                                                                    "if (pm.response.code \u003e= 200 \u0026\u0026 pm.response.code \u003c 300) {",
+                                                                                    "  const data = pm.response.json();",
+                                                                                    "  if (Array.isArray(data) \u0026\u0026 data.length \u003e 0) {",
+                                                                                    "    pm.environment.set(\"participantLogin\", data[0].login);",
+                                                                                    "    pm.environment.set(\"participantPassword\", data[0].plainPassword);",
+                                                                                    "  }",
+                                                                                    "}"
+                                                                                ]
+                                                                   }
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     },
+                                                                     {
+                                                                         "key":  "Authorization",
+                                                                         "value":  "Bearer {{adminToken}}"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{baseUrl}}/api/admin/session-definitions/{{sessionDefinitionId}}/generate-accounts",
+                                                                  "host":  [
+                                                                               "{{baseUrl}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "admin",
+                                                                               "session-definitions",
+                                                                               "{{sessionDefinitionId}}",
+                                                                               "generate-accounts"
+                                                                           ]
+                                                              },
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{\n  \"count\": 3,\n  \"assignedGroupStrategy\": \"ROUND_ROBIN\",\n  \"prefix\": \"pilot\",\n  \"groupCodes\": [\"control\", \"nudge-a\"],\n  \"defaultAssignedConfigJson\": \"{\\\"uiTheme\\\":\\\"default\\\",\\\"difficultyTier\\\":1}\"\n}"
+                                                               },
+                                                      "description":  "Генерация тестовых учёток. Первая пара login/password сохранится в environment."
+                                                  }
+                                  },
+                                  {
+                                      "name":  "List Accounts By Session",
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Authorization",
+                                                                         "value":  "Bearer {{adminToken}}"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{baseUrl}}/api/admin/session-definitions/{{sessionDefinitionId}}/accounts",
+                                                                  "host":  [
+                                                                               "{{baseUrl}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "admin",
+                                                                               "session-definitions",
+                                                                               "{{sessionDefinitionId}}",
+                                                                               "accounts"
+                                                                           ]
+                                                              }
+                                                  }
+                                  },
+                                  {
+                                      "name":  "List Runs By Session",
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Authorization",
+                                                                         "value":  "Bearer {{adminToken}}"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{baseUrl}}/api/admin/session-definitions/{{sessionDefinitionId}}/runs",
+                                                                  "host":  [
+                                                                               "{{baseUrl}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "admin",
+                                                                               "session-definitions",
+                                                                               "{{sessionDefinitionId}}",
+                                                                               "runs"
+                                                                           ]
+                                                              }
+                                                  }
+                                  },
+                                  {
+                                      "name":  "Get Session Overview",
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Authorization",
+                                                                         "value":  "Bearer {{adminToken}}"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{baseUrl}}/api/admin/session-definitions/{{sessionDefinitionId}}/overview",
+                                                                  "host":  [
+                                                                               "{{baseUrl}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "admin",
+                                                                               "session-definitions",
+                                                                               "{{sessionDefinitionId}}",
+                                                                               "overview"
+                                                                           ]
+                                                              }
+                                                  }
+                                  }
+                              ]
+                 },
+                 {
+                     "name":  "Admin / Statistical Datasets",
+                     "item":  [
+                                  {
+                                      "name":  "Create Statistical Dataset",
+                                      "event":  [
+                                                    {
+                                                        "listen":  "test",
+                                                        "script":  {
+                                                                       "type":  "text/javascript",
+                                                                       "exec":  [
+                                                                                    "if (pm.response.code \u003e= 200 \u0026\u0026 pm.response.code \u003c 300) {",
+                                                                                    "  const data = pm.response.json();",
+                                                                                    "  if (data.id) { pm.environment.set(\"statisticalDatasetId\", data.id); }",
+                                                                                    "}"
+                                                                                ]
+                                                                   }
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     },
+                                                                     {
+                                                                         "key":  "Authorization",
+                                                                         "value":  "Bearer {{adminToken}}"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{baseUrl}}/api/admin/statistical-datasets",
+                                                                  "host":  [
+                                                                               "{{baseUrl}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "admin",
+                                                                               "statistical-datasets"
+                                                                           ]
+                                                              },
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{\n  \"code\": \"base_2000_2025_v1\",\n  \"title\": \"Base macro dataset\",\n  \"description\": \"Минимальный набор периодных статистических параметров для ECU\",\n  \"status\": \"ACTIVE\",\n  \"version\": 1,\n  \"datasetJson\": \"[{\\\"periodNumber\\\":0,\\\"historicalYear\\\":\\\"training\\\",\\\"nominalIncomeGrowth\\\":3.0,\\\"inflation\\\":3.0,\\\"depositRate\\\":5.0,\\\"creditRate\\\":null,\\\"mortgageRate\\\":null},{\\\"periodNumber\\\":1,\\\"historicalYear\\\":\\\"2001\\\",\\\"nominalIncomeGrowth\\\":4.1,\\\"inflation\\\":2.8,\\\"depositRate\\\":5.3,\\\"creditRate\\\":9.5,\\\"mortgageRate\\\":8.2}]\"\n}"
+                                                               },
+                                                      "description":  "Создание statistical dataset. После успешного ответа его id сохранится как `statisticalDatasetId`."
+                                                  }
+                                  },
+                                  {
+                                      "name":  "Update Statistical Dataset",
+                                      "request":  {
+                                                      "method":  "PUT",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     },
+                                                                     {
+                                                                         "key":  "Authorization",
+                                                                         "value":  "Bearer {{adminToken}}"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{baseUrl}}/api/admin/statistical-datasets/{{statisticalDatasetId}}",
+                                                                  "host":  [
+                                                                               "{{baseUrl}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "admin",
+                                                                               "statistical-datasets",
+                                                                               "{{statisticalDatasetId}}"
+                                                                           ]
+                                                              },
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{\n  \"code\": \"base_2000_2025_v1\",\n  \"title\": \"Base macro dataset updated\",\n  \"description\": \"Обновлённый набор периодных статистических параметров\",\n  \"status\": \"ACTIVE\",\n  \"version\": 2,\n  \"datasetJson\": \"[{\\\"periodNumber\\\":0,\\\"historicalYear\\\":\\\"training\\\",\\\"nominalIncomeGrowth\\\":3.0,\\\"inflation\\\":3.0,\\\"depositRate\\\":5.0,\\\"creditRate\\\":null,\\\"mortgageRate\\\":null},{\\\"periodNumber\\\":1,\\\"historicalYear\\\":\\\"2001\\\",\\\"nominalIncomeGrowth\\\":4.4,\\\"inflation\\\":2.9,\\\"depositRate\\\":5.6,\\\"creditRate\\\":9.7,\\\"mortgageRate\\\":8.4}]\"\n}"
+                                                               },
+                                                      "description":  "Обновление датасета по `statisticalDatasetId`."
+                                                  }
+                                  },
+                                  {
+                                      "name":  "Get Statistical Dataset",
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Authorization",
+                                                                         "value":  "Bearer {{adminToken}}"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{baseUrl}}/api/admin/statistical-datasets/{{statisticalDatasetId}}",
+                                                                  "host":  [
+                                                                               "{{baseUrl}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "admin",
+                                                                               "statistical-datasets",
+                                                                               "{{statisticalDatasetId}}"
+                                                                           ]
+                                                              },
+                                                      "description":  "Получение одного датасета по `statisticalDatasetId`."
+                                                  }
+                                  },
+                                  {
+                                      "name":  "List Statistical Datasets",
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Authorization",
+                                                                         "value":  "Bearer {{adminToken}}"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{baseUrl}}/api/admin/statistical-datasets",
+                                                                  "host":  [
+                                                                               "{{baseUrl}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "admin",
+                                                                               "statistical-datasets"
+                                                                           ]
+                                                              },
+                                                      "description":  "Список statistical datasets."
+                                                  }
+                                  }
+                              ]
+                 },
+                 {
+                     "name":  "Admin / Surveys",
+                     "item":  [
+                                  {
+                                      "name":  "Create Survey Template",
+                                      "event":  [
+                                                    {
+                                                        "listen":  "test",
+                                                        "script":  {
+                                                                       "type":  "text/javascript",
+                                                                       "exec":  [
+                                                                                    "if (pm.response.code \u003e= 200 \u0026\u0026 pm.response.code \u003c 300) {",
+                                                                                    "  const data = pm.response.json();",
+                                                                                    "  if (data.id) { pm.environment.set(\"surveyTemplateId\", data.id); }",
+                                                                                    "}"
+                                                                                ]
+                                                                   }
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     },
+                                                                     {
+                                                                         "key":  "Authorization",
+                                                                         "value":  "Bearer {{adminToken}}"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{baseUrl}}/api/admin/surveys",
+                                                                  "host":  [
+                                                                               "{{baseUrl}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "admin",
+                                                                               "surveys"
+                                                                           ]
+                                                              },
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{\n  \"sessionDefinitionId\": {{sessionDefinitionId}},\n  \"code\": \"pre-survey\",\n  \"title\": \"Pre Survey\",\n  \"type\": \"PRE\",\n  \"version\": 1,\n  \"templateJson\": \"{\\\"pages\\\":[{\\\"code\\\":\\\"intro\\\",\\\"questions\\\":[{\\\"id\\\":\\\"q1\\\",\\\"type\\\":\\\"single\\\",\\\"label\\\":\\\"How are you feeling today?\\\",\\\"options\\\":[\\\"good\\\",\\\"neutral\\\",\\\"bad\\\"]}]}]}\",\n  \"enabled\": true\n}"
+                                                               }
+                                                  }
+                                  },
+                                  {
+                                      "name":  "Update Survey Template",
+                                      "request":  {
+                                                      "method":  "PUT",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     },
+                                                                     {
+                                                                         "key":  "Authorization",
+                                                                         "value":  "Bearer {{adminToken}}"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{baseUrl}}/api/admin/surveys/{{surveyTemplateId}}",
+                                                                  "host":  [
+                                                                               "{{baseUrl}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "admin",
+                                                                               "surveys",
+                                                                               "{{surveyTemplateId}}"
+                                                                           ]
+                                                              },
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{\n  \"sessionDefinitionId\": {{sessionDefinitionId}},\n  \"code\": \"pre-survey\",\n  \"title\": \"Pre Survey Updated\",\n  \"type\": \"PRE\",\n  \"version\": 2,\n  \"templateJson\": \"{\\\"pages\\\":[{\\\"code\\\":\\\"intro\\\",\\\"questions\\\":[{\\\"id\\\":\\\"q1\\\",\\\"type\\\":\\\"single\\\",\\\"label\\\":\\\"How are you feeling today?\\\",\\\"options\\\":[\\\"good\\\",\\\"neutral\\\",\\\"bad\\\"]},{\\\"id\\\":\\\"q2\\\",\\\"type\\\":\\\"text\\\",\\\"label\\\":\\\"Any notes?\\\"}]}]}\",\n  \"enabled\": true\n}"
+                                                               }
+                                                  }
+                                  },
+                                  {
+                                      "name":  "List Survey Templates",
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Authorization",
+                                                                         "value":  "Bearer {{adminToken}}"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{baseUrl}}/api/admin/surveys",
+                                                                  "host":  [
+                                                                               "{{baseUrl}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "admin",
+                                                                               "surveys"
+                                                                           ]
+                                                              }
+                                                  }
+                                  }
+                              ]
+                 },
+                 {
+                     "name":  "Participant",
+                     "item":  [
+                                  {
+                                      "name":  "Login",
+                                      "event":  [
+                                                    {
+                                                        "listen":  "test",
+                                                        "script":  {
+                                                                       "type":  "text/javascript",
+                                                                       "exec":  [
+                                                                                    "if (pm.response.code \u003e= 200 \u0026\u0026 pm.response.code \u003c 300) {",
+                                                                                    "  const data = pm.response.json();",
+                                                                                    "  if (data.token) { pm.environment.set(\"runToken\", data.token); }",
+                                                                                    "  if (data.run \u0026\u0026 data.run.runId) { pm.environment.set(\"runId\", data.run.runId); }",
+                                                                                    "}"
+                                                                                ]
+                                                                   }
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{baseUrl}}/api/auth/login",
+                                                                  "host":  [
+                                                                               "{{baseUrl}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "auth",
+                                                                               "login"
+                                                                           ]
+                                                              },
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{\n  \"login\": \"{{participantLogin}}\",\n  \"password\": \"{{participantPassword}}\"\n}"
+                                                               }
+                                                  }
+                                  },
+                                  {
+                                      "name":  "Get Current Run",
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Authorization",
+                                                                         "value":  "Bearer {{runToken}}"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{baseUrl}}/api/run/current",
+                                                                  "host":  [
+                                                                               "{{baseUrl}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "run",
+                                                                               "current"
+                                                                           ]
+                                                              }
+                                                  }
+                                  },
+                                  {
+                                      "name":  "Get Bootstrap",
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Authorization",
+                                                                         "value":  "Bearer {{runToken}}"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{baseUrl}}/api/run/{{runId}}/bootstrap",
+                                                                  "host":  [
+                                                                               "{{baseUrl}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "run",
+                                                                               "{{runId}}",
+                                                                               "bootstrap"
+                                                                           ]
+                                                              },
+                                                      "description":  "Bootstrap участника. Если у session definition указан `statisticalDatasetId`, сервер вернёт этот датасет в отдельном блоке `statisticalDataset`."
+                                                  }
+                                  },
+                                  {
+                                      "name":  "Submit Checkpoint",
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     },
+                                                                     {
+                                                                         "key":  "Authorization",
+                                                                         "value":  "Bearer {{runToken}}"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{baseUrl}}/api/run/{{runId}}/checkpoint",
+                                                                  "host":  [
+                                                                               "{{baseUrl}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "run",
+                                                                               "{{runId}}",
+                                                                               "checkpoint"
+                                                                           ]
+                                                              },
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{\n  \"periodNumber\": 1,\n  \"checkpointJson\": \"{\\\"score\\\":120,\\\"choices\\\":[\\\"A\\\",\\\"B\\\"],\\\"tests\\\":[{\\\"id\\\":\\\"t1\\\",\\\"result\\\":\\\"pass\\\"}]}\",\n  \"summaryJson\": \"{\\\"period\\\":1,\\\"status\\\":\\\"completed\\\"}\",\n  \"submittedAt\": \"2026-03-31T12:00:00\"\n}"
+                                                               }
+                                                  }
+                                  },
+                                  {
+                                      "name":  "Submit Survey",
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     },
+                                                                     {
+                                                                         "key":  "Authorization",
+                                                                         "value":  "Bearer {{runToken}}"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{baseUrl}}/api/run/{{runId}}/surveys/submit",
+                                                                  "host":  [
+                                                                               "{{baseUrl}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "run",
+                                                                               "{{runId}}",
+                                                                               "surveys",
+                                                                               "submit"
+                                                                           ]
+                                                              },
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{\n  \"surveyTemplateId\": {{surveyTemplateId}},\n  \"periodNumber\": 1,\n  \"responseJson\": \"{\\\"answers\\\":[{\\\"questionId\\\":\\\"q1\\\",\\\"value\\\":\\\"good\\\"}]}\",\n  \"submittedAt\": \"2026-03-31T12:05:00\"\n}"
+                                                               }
+                                                  }
+                                  },
+                                  {
+                                      "name":  "Submit Log Batch",
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     },
+                                                                     {
+                                                                         "key":  "Authorization",
+                                                                         "value":  "Bearer {{runToken}}"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{baseUrl}}/api/run/{{runId}}/logs/batch",
+                                                                  "host":  [
+                                                                               "{{baseUrl}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "run",
+                                                                               "{{runId}}",
+                                                                               "logs",
+                                                                               "batch"
+                                                                           ]
+                                                              },
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{\n  \"periodNumber\": 1,\n  \"batchType\": \"period-events\",\n  \"payloadJson\": \"{\\\"events\\\":[{\\\"type\\\":\\\"screen-open\\\",\\\"ts\\\":1711886400},{\\\"type\\\":\\\"choice-made\\\",\\\"value\\\":\\\"A\\\"}]}\"\n}"
+                                                               }
+                                                  }
+                                  },
+                                  {
+                                      "name":  "Complete Run",
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Authorization",
+                                                                         "value":  "Bearer {{runToken}}"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{baseUrl}}/api/run/{{runId}}/complete",
+                                                                  "host":  [
+                                                                               "{{baseUrl}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "run",
+                                                                               "{{runId}}",
+                                                                               "complete"
+                                                                           ]
+                                                              }
+                                                  }
+                                  }
+                              ]
+                 },
+                 {
+                     "name":  "Admin / Export",
+                     "item":  [
+                                  {
+                                      "name":  "Export Summary",
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Authorization",
+                                                                         "value":  "Bearer {{adminToken}}"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{baseUrl}}/api/admin/export/session-definition/{{sessionDefinitionId}}/summary",
+                                                                  "host":  [
+                                                                               "{{baseUrl}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "admin",
+                                                                               "export",
+                                                                               "session-definition",
+                                                                               "{{sessionDefinitionId}}",
+                                                                               "summary"
+                                                                           ]
+                                                              }
+                                                  }
+                                  },
+                                  {
+                                      "name":  "Export Checkpoints",
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Authorization",
+                                                                         "value":  "Bearer {{adminToken}}"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{baseUrl}}/api/admin/export/session-definition/{{sessionDefinitionId}}/checkpoints",
+                                                                  "host":  [
+                                                                               "{{baseUrl}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "admin",
+                                                                               "export",
+                                                                               "session-definition",
+                                                                               "{{sessionDefinitionId}}",
+                                                                               "checkpoints"
+                                                                           ]
+                                                              }
+                                                  }
+                                  },
+                                  {
+                                      "name":  "Export Surveys",
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Authorization",
+                                                                         "value":  "Bearer {{adminToken}}"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{baseUrl}}/api/admin/export/session-definition/{{sessionDefinitionId}}/surveys",
+                                                                  "host":  [
+                                                                               "{{baseUrl}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "admin",
+                                                                               "export",
+                                                                               "session-definition",
+                                                                               "{{sessionDefinitionId}}",
+                                                                               "surveys"
+                                                                           ]
+                                                              }
+                                                  }
+                                  },
+                                  {
+                                      "name":  "Export Accounts Runs",
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Authorization",
+                                                                         "value":  "Bearer {{adminToken}}"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{baseUrl}}/api/admin/export/session-definition/{{sessionDefinitionId}}/accounts-runs",
+                                                                  "host":  [
+                                                                               "{{baseUrl}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "admin",
+                                                                               "export",
+                                                                               "session-definition",
+                                                                               "{{sessionDefinitionId}}",
+                                                                               "accounts-runs"
+                                                                           ]
+                                                              }
+                                                  }
+                                  }
+                              ]
+                 }
+             ],
+    "variable":  [
+                     {
+                         "key":  "baseUrl",
+                         "value":  "https://tomcat.sonya.jij.li/ltss"
+                     }
+                 ]
 }

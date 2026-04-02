@@ -11,6 +11,7 @@ public record SessionDefinitionResponse(
         ExperimentSessionStatus status,
         Integer configVersion,
         Integer participantCountPlanned,
+        Long statisticalDatasetId,
         String sessionConfigJson,
         LocalDateTime createdAt,
         LocalDateTime updatedAt

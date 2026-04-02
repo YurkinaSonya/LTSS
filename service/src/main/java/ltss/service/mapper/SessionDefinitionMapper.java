@@ -18,6 +18,7 @@ public class SessionDefinitionMapper {
                 entity.getStatus(),
                 entity.getConfigVersion(),
                 entity.getParticipantCountPlanned(),
+                entity.getStatisticalDataset() != null ? entity.getStatisticalDataset().getId() : null,
                 entity.getSessionConfigJson(),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt()
@@ -33,6 +34,7 @@ public class SessionDefinitionMapper {
                 entity.getStatus(),
                 entity.getConfigVersion(),
                 entity.getParticipantCountPlanned(),
+                entity.getStatisticalDataset() != null ? entity.getStatisticalDataset().getId() : null,
                 entity.getSessionConfigJson()
         );
     }

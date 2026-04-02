@@ -18,6 +18,7 @@ public record SessionDefinitionRequest(
         Integer configVersion,
         @Min(value = 0, message = "participantCountPlanned must not be negative")
         Integer participantCountPlanned,
+        Long statisticalDatasetId,
         @NotBlank(message = "sessionConfigJson is required")
         String sessionConfigJson
 ) {
