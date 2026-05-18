@@ -14,6 +14,7 @@ public class Enums
     {
         Casual,
         Results,
-        AssetOperation
+        AssetOperation,
+        InterPeriodBlock
     }
 }

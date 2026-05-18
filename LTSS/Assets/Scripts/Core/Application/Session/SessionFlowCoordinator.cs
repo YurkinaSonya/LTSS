@@ -17,6 +17,7 @@ namespace Game.Core.Application.Session
         private readonly ISessionCoordinator _sessionCoordinator;
         private readonly ISessionPersistenceService _persistenceService;
         private readonly IPeriodGameplayService _periodGameplayService;
+        private readonly IPopupNavigationService _popupNavigation;
         private readonly IApplicationStateStore _stateStore;
         private readonly IGameSessionService _gameSessionService;
         private readonly IApplicationNavigationService _navigation;
@@ -34,6 +35,7 @@ namespace Game.Core.Application.Session
             ISessionCoordinator sessionCoordinator,
             ISessionPersistenceService persistenceService,
             IPeriodGameplayService periodGameplayService,
+            IPopupNavigationService popupNavigation,
             IApplicationStateStore stateStore,
             IGameSessionService gameSessionService,
             IApplicationNavigationService navigation,
@@ -44,6 +46,7 @@ namespace Game.Core.Application.Session
             _sessionCoordinator = sessionCoordinator;
             _persistenceService = persistenceService;
             _periodGameplayService = periodGameplayService;
+            _popupNavigation = popupNavigation;
             _stateStore = stateStore;
             _gameSessionService = gameSessionService;
             _navigation = navigation;
@@ -274,6 +277,34 @@ namespace Game.Core.Application.Session
                 return;
             }
 
+            if (descriptor.Scope == SessionFlowStepScope.InterPeriodBlock)
+            {
+                if (descriptor.PeriodNumber > 0
+                    && (clientRuntime.Bootstrap == null
+                        || clientRuntime.Bootstrap.Run == null
+                        || clientRuntime.Bootstrap.Run.CurrentPeriodNumber != descriptor.PeriodNumber))
+                {
+                    _sessionCoordinator?.UpdateLocalRunProgress(descriptor.PeriodNumber, RunLifecycleStatus.InProgress);
+                }
+
+                var interPeriodStepView = BuildStepViewModel(clientRuntime, config, descriptor);
+                Publish(new SessionFlowRuntimeState(
+                    config,
+                    nextProgress,
+                    interPeriodStepView,
+                    string.IsNullOrWhiteSpace(statusMessage)
+                        ? "Подготовка периода..."
+                        : statusMessage,
+                    lastError,
+                    false));
+                ApplyScreenState(ScreenId.Gameplay, statusMessage, lastError, false);
+                _gameSessionService?.SetStage(GameFlowStage.Gameplay);
+                _gameSessionService?.SetPhase(GameFlowPhase.LoadingData);
+                _periodGameplayService?.ActivateCurrentPeriod();
+                EnsureInterPeriodPopupOpened(descriptor);
+                return;
+            }
+
             var activeStepView = BuildStepViewModel(clientRuntime, config, descriptor);
             Publish(new SessionFlowRuntimeState(
                 config,
@@ -285,6 +316,31 @@ namespace Game.Core.Application.Session
             ApplyScreenState(ScreenId.FlowStep, statusMessage, lastError, false);
             _gameSessionService?.SetStage(GameFlowStage.Gameplay);
             _gameSessionService?.SetPhase(GameFlowPhase.Preparation);
+        }
+
+        private void EnsureInterPeriodPopupOpened(SessionFlowStepDescriptor descriptor)
+        {
+            if (_popupNavigation == null || !descriptor.IsDefined || descriptor.Scope != SessionFlowStepScope.InterPeriodBlock)
+            {
+                return;
+            }
+
+            var currentPopupStack = _stateStore != null
+                ? _stateStore.Current.PopupStack
+                : null;
+            var desiredRoute = new PopupRoute(Enums.PopupType.InterPeriodBlock, descriptor.Key);
+
+            if (currentPopupStack != null && currentPopupStack.Count > 0)
+            {
+                var topPopup = currentPopupStack[currentPopupStack.Count - 1];
+
+                if (topPopup != null && topPopup.IsEquivalentTo(desiredRoute))
+                {
+                    return;
+                }
+            }
+
+            _popupNavigation.Push(desiredRoute);
         }
 
         private SessionFlowProgressState LoadOrCreateProgress(
@@ -378,6 +434,24 @@ namespace Game.Core.Application.Session
                             block.IsRequired);
                     }
 
+                    for (var interIndex = 0; interIndex < period.InterPeriodBlocks.Count; interIndex++)
+                    {
+                        var block = period.InterPeriodBlocks[interIndex];
+
+                        if (block == null || progress.IsCompleted(SessionFlowStepScope.InterPeriodBlock, block.Id))
+                        {
+                            continue;
+                        }
+
+                        return new SessionFlowStepDescriptor(
+                            block.Id,
+                            SessionFlowStepScope.InterPeriodBlock,
+                            period.Number,
+                            block.Type,
+                            block.Title,
+                            block.IsRequired);
+                    }
+
                     if (!progress.IsPeriodCompleted(period.Number))
                     {
                         return new SessionFlowStepDescriptor(
@@ -410,23 +484,6 @@ namespace Game.Core.Application.Session
                             surveyRef != null && surveyRef.IsRequired);
                     }
 
-                    for (var interIndex = 0; interIndex < period.InterPeriodBlocks.Count; interIndex++)
-                    {
-                        var block = period.InterPeriodBlocks[interIndex];
-
-                        if (block == null || progress.IsCompleted(SessionFlowStepScope.InterPeriodBlock, block.Id))
-                        {
-                            continue;
-                        }
-
-                        return new SessionFlowStepDescriptor(
-                            block.Id,
-                            SessionFlowStepScope.InterPeriodBlock,
-                            period.Number,
-                            block.Type,
-                            block.Title,
-                            block.IsRequired);
-                    }
                 }
             }
 
