@@ -786,6 +786,8 @@ namespace Game.Core.Application.Periods
                 return;
             }
 
+            var carryOverDepositBalance = ResolveCarryOverDepositBalance(state, state.Summary);
+
             var dto = new PeriodRuntimeSnapshotDto
             {
                 runId = state.RunId,
@@ -800,7 +802,7 @@ namespace Game.Core.Application.Periods
                 hasPersistedCarryOverAccumulatedUje = state.Summary != null,
                 carryOverTargetPeriodNumber = state.PeriodNumber + 1,
                 carryOverCashBalance = state.Summary != null ? Math.Max(0d, state.Summary.CashBalance) : 0d,
-                carryOverDepositBalance = state.Summary != null ? Math.Max(0d, state.Summary.DepositBalance) : 0d,
+                carryOverDepositBalance = carryOverDepositBalance,
                 carryOverAccumulatedUje = state.Summary != null ? state.Summary.Uje : 0d,
                 expenses = BuildExpenseSnapshots(state.Expenses),
                 assetOperations = BuildOperationSnapshots(state.AssetOperations),
@@ -1237,8 +1239,40 @@ namespace Game.Core.Application.Periods
             _pendingCarryOverRunId = runId ?? string.Empty;
             _pendingCarryOverTargetPeriodNumber = targetPeriodNumber > 0 ? targetPeriodNumber : 0;
             _pendingCarryOverCashBalance = summary != null ? Math.Max(0d, summary.CashBalance) : 0d;
-            _pendingCarryOverDepositBalance = summary != null ? Math.Max(0d, summary.DepositBalance) : 0d;
+            _pendingCarryOverDepositBalance = ResolveCarryOverDepositBalance(_current, summary);
             _pendingCarryOverAccumulatedUje = summary != null ? summary.Uje : 0d;
+        }
+
+        private static double ResolveCarryOverDepositBalance(PeriodRuntimeState state, PeriodCalculationSummary summary)
+        {
+            var baseDepositBalance = summary != null
+                ? Math.Max(0d, summary.DepositBalance)
+                : 0d;
+
+            if (state == null || !state.HasDefinition || baseDepositBalance <= 0d)
+            {
+                return baseDepositBalance;
+            }
+
+            var economyContext = state.Definition.EconomyContext ?? PeriodEconomyContext.Empty;
+            var normalizedRate = NormalizePercentageToRate(economyContext.DepositRate);
+
+            if (normalizedRate <= 0d)
+            {
+                return baseDepositBalance;
+            }
+
+            return baseDepositBalance * (1d + normalizedRate);
+        }
+
+        private static double NormalizePercentageToRate(double? rawPercent)
+        {
+            if (!rawPercent.HasValue || rawPercent.Value <= 0d)
+            {
+                return 0d;
+            }
+
+            return rawPercent.Value / 100d;
         }
 
         private void ClearPendingCarryOver()
