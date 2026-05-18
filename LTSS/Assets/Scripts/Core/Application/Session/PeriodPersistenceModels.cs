@@ -63,6 +63,7 @@ namespace Game.Core.Application.Session
     [Serializable]
     public sealed class ConsumerCreditContractSnapshotDto
     {
+        public string contractType;
         public string creditId;
         public int originationPeriodNumber;
         public double originalPrincipal;

@@ -5,7 +5,13 @@ namespace Game.Core.Application.Periods
 {
     public static class ConsumerCreditMath
     {
+        public const string ConsumerCreditKind = "consumer_credit";
+        public const string MortgageKind = "mortgage";
         public const int DefaultTermPeriods = 5;
+        public const int MortgageTermPeriods = 30;
+        public const double MortgagePropertyCost = 300d;
+        public const double MortgageDownPayment = 60d;
+        public const double MortgagePrincipal = 240d;
 
         public static double CalculateAnnuityPayment(double principal, double? rawRatePercent, int periods = DefaultTermPeriods)
         {
@@ -80,15 +86,25 @@ namespace Game.Core.Application.Periods
 
         public static string BuildExpenseId(string creditId)
         {
+            return BuildExpenseId(ConsumerCreditKind, creditId);
+        }
+
+        public static string BuildExpenseId(string contractType, string creditId)
+        {
+            var prefix = string.Equals(contractType, MortgageKind, StringComparison.Ordinal)
+                ? "mortgage_payment"
+                : "consumer_credit_payment";
+
             return string.IsNullOrWhiteSpace(creditId)
-                ? "consumer_credit_payment"
-                : $"consumer_credit_payment:{creditId}";
+                ? prefix
+                : $"{prefix}:{creditId}";
         }
 
         public static bool IsCreditExpenseId(string expenseId)
         {
             return !string.IsNullOrWhiteSpace(expenseId)
-                   && expenseId.StartsWith("consumer_credit_payment", StringComparison.Ordinal);
+                   && (expenseId.StartsWith("consumer_credit_payment", StringComparison.Ordinal)
+                       || expenseId.StartsWith("mortgage_payment", StringComparison.Ordinal));
         }
 
         public static string ExtractCreditId(string expenseId)
@@ -102,6 +118,26 @@ namespace Game.Core.Application.Periods
             return separatorIndex >= 0 && separatorIndex < expenseId.Length - 1
                 ? expenseId.Substring(separatorIndex + 1)
                 : string.Empty;
+        }
+
+        public static string ExtractContractType(string expenseId)
+        {
+            if (string.IsNullOrWhiteSpace(expenseId))
+            {
+                return string.Empty;
+            }
+
+            if (expenseId.StartsWith("mortgage_payment", StringComparison.Ordinal))
+            {
+                return MortgageKind;
+            }
+
+            if (expenseId.StartsWith("consumer_credit_payment", StringComparison.Ordinal))
+            {
+                return ConsumerCreditKind;
+            }
+
+            return string.Empty;
         }
 
         public static double NormalizePercentageToRate(double? rawPercent)

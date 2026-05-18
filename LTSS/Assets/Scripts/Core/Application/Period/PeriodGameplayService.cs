@@ -421,6 +421,19 @@ namespace Game.Core.Application.Periods
             Publish(_current.With(statusMessage: string.Empty, lastError: string.Empty));
         }
 
+        public void OpenMortgageDialog()
+        {
+            if (!_current.HasDefinition
+                || !CanEditCurrentState()
+                || !IsMortgageAvailable(_current.Definition))
+            {
+                return;
+            }
+
+            _popupNavigation?.Push(Enums.PopupType.Mortgage, "mortgage_open");
+            Publish(_current.With(statusMessage: string.Empty, lastError: string.Empty));
+        }
+
         public void CycleAssetDialogSource()
         {
             if (_current == null || !CanEditCurrentState() || !_current.AssetDialog.IsOpen)
@@ -611,6 +624,7 @@ namespace Game.Core.Application.Periods
             var nextCredits = new List<ConsumerCreditContractRuntime>(definition.ConsumerCredits ?? Array.Empty<ConsumerCreditContractRuntime>())
             {
                 new ConsumerCreditContractRuntime(
+                    ConsumerCreditMath.ConsumerCreditKind,
                     Guid.NewGuid().ToString("N"),
                     _current.PeriodNumber,
                     principal,
@@ -636,6 +650,82 @@ namespace Game.Core.Application.Periods
                 AssetOperationDialogState.Closed,
                 _current.IsCheckpointSubmitted,
                 "Кредит оформлен.",
+                string.Empty,
+                _current.SubmittedAtUtc,
+                true);
+
+            Publish(nextState);
+            PersistCurrentState();
+            return true;
+        }
+
+        public bool TrySubmitMortgage(out string errorMessage)
+        {
+            errorMessage = string.Empty;
+
+            if (!_current.HasDefinition || !CanEditCurrentState())
+            {
+                errorMessage = "Период недоступен для оформления ипотеки.";
+                return false;
+            }
+
+            if (!IsMortgageAvailable(_current.Definition))
+            {
+                errorMessage = "Ипотека пока недоступна.";
+                return false;
+            }
+
+            if (HasActiveMortgage(_current.Definition.ConsumerCredits))
+            {
+                errorMessage = "Активная ипотека уже оформлена.";
+                return false;
+            }
+
+            var summary = _current.Summary ?? PeriodCalculationSummary.Empty;
+
+            if (summary.CashBalance + 0.01d < ConsumerCreditMath.MortgageDownPayment)
+            {
+                errorMessage = $"Для первоначального взноса нужно {EcuFormatter.FormatAmount(ConsumerCreditMath.MortgageDownPayment)} наличными.";
+                return false;
+            }
+
+            var definition = _current.Definition;
+            var ratePercent = definition.EconomyContext != null
+                ? definition.EconomyContext.MortgageRate
+                : null;
+            var periodicPayment = ConsumerCreditMath.CalculateAnnuityPayment(
+                ConsumerCreditMath.MortgagePrincipal,
+                ratePercent,
+                ConsumerCreditMath.MortgageTermPeriods);
+            var nextCredits = new List<ConsumerCreditContractRuntime>(definition.ConsumerCredits ?? Array.Empty<ConsumerCreditContractRuntime>())
+            {
+                new ConsumerCreditContractRuntime(
+                    ConsumerCreditMath.MortgageKind,
+                    Guid.NewGuid().ToString("N"),
+                    _current.PeriodNumber,
+                    ConsumerCreditMath.MortgagePrincipal,
+                    ConsumerCreditMath.MortgagePrincipal,
+                    periodicPayment,
+                    ratePercent ?? 0d,
+                    ConsumerCreditMath.MortgageTermPeriods)
+            };
+
+            var nextDefinition = CloneDefinition(
+                definition,
+                consumerCredits: nextCredits,
+                initialCashBalance: definition.InitialCashBalance - ConsumerCreditMath.MortgageDownPayment);
+            var nextSummary = _calculationEngine.Recalculate(nextDefinition, _current.Expenses, _current.AssetOperations);
+            var nextState = new PeriodRuntimeState(
+                _current.RunId,
+                _current.PeriodNumber,
+                PeriodFlowState.PeriodActive,
+                nextDefinition,
+                _current.Expenses,
+                _current.AssetOperations,
+                nextSummary,
+                AssetOperationDialogState.Closed,
+                _current.IsCheckpointSubmitted,
+                "Ипотека оформлена.",
                 string.Empty,
                 _current.SubmittedAtUtc,
                 true);
@@ -1176,6 +1266,36 @@ namespace Game.Core.Application.Periods
                    && definition.Meta.HasFeature("consumer_credit");
         }
 
+        private static bool IsMortgageAvailable(PeriodRuntimeDefinition definition)
+        {
+            return definition != null
+                   && definition.Meta != null
+                   && definition.Meta.HasFeature("mortgage");
+        }
+
+        private static bool HasActiveMortgage(IReadOnlyList<ConsumerCreditContractRuntime> credits)
+        {
+            if (credits == null || credits.Count == 0)
+            {
+                return false;
+            }
+
+            for (var index = 0; index < credits.Count; index++)
+            {
+                var credit = credits[index];
+
+                if (credit != null
+                    && string.Equals(credit.ContractType, ConsumerCreditMath.MortgageKind, StringComparison.Ordinal)
+                    && credit.RemainingPeriods > 0
+                    && credit.RemainingPrincipal > 0.01d)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private static bool IsFixedAmountExpense(PeriodExpenseDefinition definition)
         {
             return definition != null
@@ -1707,6 +1827,7 @@ namespace Game.Core.Application.Periods
                     ? null
                     : new ConsumerCreditContractSnapshotDto
                     {
+                        contractType = credit.ContractType,
                         creditId = credit.CreditId,
                         originationPeriodNumber = credit.OriginationPeriodNumber,
                         originalPrincipal = credit.OriginalPrincipal,

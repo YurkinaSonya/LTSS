@@ -40,6 +40,7 @@ namespace Game.Domain.GameFlow
 
     public sealed class ConsumerCreditContractRuntime
     {
+        public string ContractType { get; }
         public string CreditId { get; }
         public int OriginationPeriodNumber { get; }
         public double OriginalPrincipal { get; }
@@ -49,6 +50,7 @@ namespace Game.Domain.GameFlow
         public int RemainingPeriods { get; }
 
         public ConsumerCreditContractRuntime(
+            string contractType,
             string creditId,
             int originationPeriodNumber,
             double originalPrincipal,
@@ -57,6 +59,7 @@ namespace Game.Domain.GameFlow
             double fixedRatePercent,
             int remainingPeriods)
         {
+            ContractType = contractType ?? string.Empty;
             CreditId = creditId ?? string.Empty;
             OriginationPeriodNumber = originationPeriodNumber;
             OriginalPrincipal = originalPrincipal;

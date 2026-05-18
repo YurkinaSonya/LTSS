@@ -50,7 +50,9 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
     private Text _emptyStateLabel;
     private Button _backButton;
     private Button _completeButton;
+    private RectTransform _loanActionRow;
     private Button _consumerCreditButton;
+    private Button _mortgageButton;
     private RectTransform _expenseContent;
     private RectTransform _assetContent;
     private RectTransform _infoContent;
@@ -77,12 +79,14 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         Action<string> onApplyRequiredExpenseAmount,
         Action<string, FundsSourceType> onExpenseSourceChanged,
         Action<string, AssetOperationKind> onAssetAction,
-        Action onConsumerCreditAction)
+        Action onConsumerCreditAction,
+        Action onMortgageAction)
     {
         EnsureBuilt();
         BindButton(_backButton, onBack);
         BindButton(_completeButton, onComplete);
         BindButton(_consumerCreditButton, onConsumerCreditAction);
+        BindButton(_mortgageButton, onMortgageAction);
 
         if (runtimeState == null || !runtimeState.HasDefinition)
         {
@@ -191,8 +195,12 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         _expenseContent = CreateScrollableSection(leftColumn, "Расходы", out _expenseScrollRect);
         AddLayoutElement(_expenseContent.parent.gameObject, flexibleHeight: 1f);
 
-        _consumerCreditButton = RuntimeUiFactory.CreateSecondaryButton(leftColumn, "Взять потребительский кредит", 46f);
-        AddLayoutElement(_consumerCreditButton.gameObject, preferredHeight: 46f);
+        _loanActionRow = CreateRow(leftColumn, "LoanActionRow", 12f, TextAnchor.MiddleCenter);
+        AddLayoutElement(_loanActionRow.gameObject, preferredHeight: 46f);
+        _consumerCreditButton = RuntimeUiFactory.CreateSecondaryButton(_loanActionRow, "Потребительский кредит", 46f);
+        AddLayoutElement(_consumerCreditButton.gameObject, flexibleWidth: 1f, preferredHeight: 46f);
+        _mortgageButton = RuntimeUiFactory.CreateSecondaryButton(_loanActionRow, "Ипотека", 46f);
+        AddLayoutElement(_mortgageButton.gameObject, flexibleWidth: 1f, preferredHeight: 46f);
 
         _assetContent = CreateSection(leftColumn, "Активы");
         _infoContent = CreateSection(rightColumn, "Параметры периода");
@@ -385,25 +393,38 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
 
     private void ApplyConsumerCredit(PeriodRuntimeState runtimeState)
     {
-        if (_consumerCreditButton == null)
+        if (_consumerCreditButton == null || _mortgageButton == null)
         {
             return;
         }
 
-        var isVisible = runtimeState != null
-                        && runtimeState.HasDefinition
-                        && runtimeState.Definition.Meta != null
-                        && runtimeState.Definition.Meta.HasFeature("consumer_credit");
-        _consumerCreditButton.gameObject.SetActive(isVisible);
+        var canEdit = runtimeState.FlowState == PeriodFlowState.PeriodIntro
+                      || runtimeState.FlowState == PeriodFlowState.PeriodActive
+                      || runtimeState.FlowState == PeriodFlowState.PeriodValidation;
+        var showConsumerCredit = runtimeState != null
+                                 && runtimeState.HasDefinition
+                                 && runtimeState.Definition.Meta != null
+                                 && runtimeState.Definition.Meta.HasFeature("consumer_credit");
+        var showMortgage = runtimeState != null
+                           && runtimeState.HasDefinition
+                           && runtimeState.Definition.Meta != null
+                           && runtimeState.Definition.Meta.HasFeature("mortgage");
 
-        if (!isVisible)
+        if (_loanActionRow != null)
+        {
+            _loanActionRow.gameObject.SetActive(showConsumerCredit || showMortgage);
+        }
+
+        _consumerCreditButton.gameObject.SetActive(showConsumerCredit);
+        _mortgageButton.gameObject.SetActive(showMortgage);
+
+        if (!showConsumerCredit && !showMortgage)
         {
             return;
         }
 
-        _consumerCreditButton.interactable = runtimeState.FlowState == PeriodFlowState.PeriodIntro
-                                             || runtimeState.FlowState == PeriodFlowState.PeriodActive
-                                             || runtimeState.FlowState == PeriodFlowState.PeriodValidation;
+        _consumerCreditButton.interactable = canEdit && showConsumerCredit;
+        _mortgageButton.interactable = canEdit && showMortgage;
     }
 
     private void ApplyAssets(

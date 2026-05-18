@@ -443,6 +443,9 @@ namespace Game.Core.Application.Periods
                 }
 
                 result.Add(new ConsumerCreditContractRuntime(
+                    string.IsNullOrWhiteSpace(snapshot.contractType)
+                        ? ConsumerCreditMath.ConsumerCreditKind
+                        : snapshot.contractType,
                     snapshot.creditId,
                     snapshot.originationPeriodNumber,
                     Math.Max(0d, snapshot.originalPrincipal),
@@ -485,7 +488,13 @@ namespace Game.Core.Application.Periods
                     continue;
                 }
 
-                var paymentAmount = ResolveCreditPaymentAmount(credit.CreditId, credit.PeriodicPayment, expenseSnapshots);
+                var paymentAmount = ResolveCreditPaymentAmount(
+                    string.IsNullOrWhiteSpace(credit.ContractType)
+                        ? ConsumerCreditMath.ConsumerCreditKind
+                        : credit.ContractType,
+                    credit.CreditId,
+                    credit.PeriodicPayment,
+                    expenseSnapshots);
                 var nextRemainingPrincipal = ConsumerCreditMath.CalculateNextRemainingPrincipal(
                     credit.RemainingPrincipal,
                     paymentAmount,
@@ -498,6 +507,9 @@ namespace Game.Core.Application.Periods
                 }
 
                 result.Add(new ConsumerCreditContractRuntime(
+                    string.IsNullOrWhiteSpace(credit.ContractType)
+                        ? ConsumerCreditMath.ConsumerCreditKind
+                        : credit.ContractType,
                     credit.CreditId,
                     credit.OriginationPeriodNumber,
                     credit.OriginalPrincipal,
@@ -511,6 +523,7 @@ namespace Game.Core.Application.Periods
         }
 
         private static double ResolveCreditPaymentAmount(
+            string contractType,
             string creditId,
             double fallbackPaymentAmount,
             IReadOnlyList<PeriodExpenseStateSnapshotDto> expenseSnapshots)
@@ -520,7 +533,7 @@ namespace Game.Core.Application.Periods
                 return Math.Max(0d, fallbackPaymentAmount);
             }
 
-            var expenseId = ConsumerCreditMath.BuildExpenseId(creditId);
+            var expenseId = ConsumerCreditMath.BuildExpenseId(contractType, creditId);
 
             for (var index = 0; index < expenseSnapshots.Count; index++)
             {
@@ -577,8 +590,14 @@ namespace Game.Core.Application.Periods
                 }
 
                 result.Add(new PeriodExpenseDefinition(
-                    ConsumerCreditMath.BuildExpenseId(credit.CreditId),
-                    "Платёж по кредиту",
+                    ConsumerCreditMath.BuildExpenseId(
+                        string.IsNullOrWhiteSpace(credit.ContractType)
+                            ? ConsumerCreditMath.ConsumerCreditKind
+                            : credit.ContractType,
+                        credit.CreditId),
+                    string.Equals(credit.ContractType, ConsumerCreditMath.MortgageKind, StringComparison.Ordinal)
+                        ? "Платёж по ипотеке"
+                        : "Платёж по кредиту",
                     true,
                     credit.PeriodicPayment,
                     credit.PeriodicPayment,
@@ -738,6 +757,20 @@ namespace Game.Core.Application.Periods
                         "creditRate",
                         "consumerCreditRate",
                         "loanRate"));
+            }
+            if (configuredPeriod != null && configuredPeriod.HasFeature("mortgage"))
+            {
+                AddInfoValueIfMissing(
+                    result,
+                    CreateStatisticsInfoValue(
+                        periodNode,
+                        sessionRoot,
+                        "mortgage_rate",
+                        "Ставка по ипотеке",
+                        periodStatistics != null ? periodStatistics.MortgageRate : null,
+                        "%",
+                        "mortgageRate",
+                        "homeLoanRate"));
             }
 
             return result;
