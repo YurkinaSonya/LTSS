@@ -565,7 +565,7 @@ namespace Game.Core.Application.Session
             SessionFlowStepDescriptor.Empty,
             false,
             false,
-            false);
+            0);
 
         public IReadOnlyList<string> CompletedPreSessionStepKeys { get; }
         public IReadOnlyList<string> CompletedPeriodContentBlockKeys { get; }
@@ -577,7 +577,7 @@ namespace Game.Core.Application.Session
         public SessionFlowStepDescriptor ActiveStep { get; }
         public bool IsPostSessionCompleted { get; }
         public bool IsSessionCompleted { get; }
-        public bool HasPermanentIncomeLoss { get; }
+        public int IncomeLossPeriodNumber { get; }
 
         public SessionFlowProgressState(
             IReadOnlyList<string> completedPreSessionStepKeys,
@@ -590,7 +590,7 @@ namespace Game.Core.Application.Session
             SessionFlowStepDescriptor activeStep,
             bool isPostSessionCompleted,
             bool isSessionCompleted,
-            bool hasPermanentIncomeLoss)
+            int incomeLossPeriodNumber)
         {
             CompletedPreSessionStepKeys = completedPreSessionStepKeys != null
                 ? new List<string>(completedPreSessionStepKeys)
@@ -614,7 +614,7 @@ namespace Game.Core.Application.Session
             ActiveStep = activeStep ?? SessionFlowStepDescriptor.Empty;
             IsPostSessionCompleted = isPostSessionCompleted;
             IsSessionCompleted = isSessionCompleted;
-            HasPermanentIncomeLoss = hasPermanentIncomeLoss;
+            IncomeLossPeriodNumber = incomeLossPeriodNumber > 0 ? incomeLossPeriodNumber : 0;
         }
 
         public bool IsCompleted(SessionFlowStepScope scope, string key)
@@ -672,7 +672,7 @@ namespace Game.Core.Application.Session
                 activeStep,
                 IsPostSessionCompleted,
                 IsSessionCompleted,
-                HasPermanentIncomeLoss);
+                IncomeLossPeriodNumber);
         }
 
         public SessionFlowProgressState WithCompleted(SessionFlowStepScope scope, string key)
@@ -691,7 +691,7 @@ namespace Game.Core.Application.Session
                         ActiveStep,
                         IsPostSessionCompleted,
                         IsSessionCompleted,
-                        HasPermanentIncomeLoss);
+                        IncomeLossPeriodNumber);
                 case SessionFlowStepScope.PeriodContent:
                     return new SessionFlowProgressState(
                         CompletedPreSessionStepKeys,
@@ -704,7 +704,7 @@ namespace Game.Core.Application.Session
                         ActiveStep,
                         IsPostSessionCompleted,
                         IsSessionCompleted,
-                        HasPermanentIncomeLoss);
+                        IncomeLossPeriodNumber);
                 case SessionFlowStepScope.PostPeriodSurvey:
                     return new SessionFlowProgressState(
                         CompletedPreSessionStepKeys,
@@ -717,7 +717,7 @@ namespace Game.Core.Application.Session
                         ActiveStep,
                         IsPostSessionCompleted,
                         IsSessionCompleted,
-                        HasPermanentIncomeLoss);
+                        IncomeLossPeriodNumber);
                 case SessionFlowStepScope.InterPeriodBlock:
                     return new SessionFlowProgressState(
                         CompletedPreSessionStepKeys,
@@ -730,7 +730,7 @@ namespace Game.Core.Application.Session
                         ActiveStep,
                         IsPostSessionCompleted,
                         IsSessionCompleted,
-                        HasPermanentIncomeLoss);
+                        IncomeLossPeriodNumber);
                 case SessionFlowStepScope.PostSession:
                     return new SessionFlowProgressState(
                         CompletedPreSessionStepKeys,
@@ -743,7 +743,7 @@ namespace Game.Core.Application.Session
                         ActiveStep,
                         IsPostSessionCompleted,
                         IsSessionCompleted,
-                        HasPermanentIncomeLoss);
+                        IncomeLossPeriodNumber);
                 default:
                     return this;
             }
@@ -762,7 +762,7 @@ namespace Game.Core.Application.Session
                 ActiveStep,
                 IsPostSessionCompleted,
                 IsSessionCompleted,
-                HasPermanentIncomeLoss);
+                IncomeLossPeriodNumber);
         }
 
         public SessionFlowProgressState WithPostSessionCompleted(bool value)
@@ -778,7 +778,7 @@ namespace Game.Core.Application.Session
                 ActiveStep,
                 value,
                 IsSessionCompleted,
-                HasPermanentIncomeLoss);
+                IncomeLossPeriodNumber);
         }
 
         public SessionFlowProgressState WithSessionCompleted(bool value)
@@ -794,10 +794,10 @@ namespace Game.Core.Application.Session
                 ActiveStep,
                 IsPostSessionCompleted,
                 value,
-                HasPermanentIncomeLoss);
+                IncomeLossPeriodNumber);
         }
 
-        public SessionFlowProgressState WithPermanentIncomeLoss(bool value)
+        public SessionFlowProgressState WithIncomeLossPeriod(int periodNumber)
         {
             return new SessionFlowProgressState(
                 CompletedPreSessionStepKeys,
@@ -810,7 +810,7 @@ namespace Game.Core.Application.Session
                 ActiveStep,
                 IsPostSessionCompleted,
                 IsSessionCompleted,
-                value);
+                periodNumber > 0 ? periodNumber : 0);
         }
 
         private static bool Contains(IReadOnlyList<string> source, string value)

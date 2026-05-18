@@ -22,6 +22,7 @@ namespace Game.Core.Application.Session
         public bool activeStepRequired;
         public bool isPostSessionCompleted;
         public bool isSessionCompleted;
+        public int incomeLossPeriodNumber;
         public bool hasPermanentIncomeLoss;
         public string savedAtUtc;
         public bool canRestore;
@@ -41,11 +42,11 @@ namespace Game.Core.Application.Session
                     ToScope(activeStepScope),
                     activePeriodNumber,
                     ToStepType(activeStepType),
-                    activeStepTitle,
-                    activeStepRequired),
+                activeStepTitle,
+                activeStepRequired),
                 isPostSessionCompleted,
                 isSessionCompleted,
-                hasPermanentIncomeLoss);
+                incomeLossPeriodNumber > 0 ? incomeLossPeriodNumber : (hasPermanentIncomeLoss ? activePeriodNumber : 0));
         }
 
         private static SessionFlowStepScope ToScope(string rawValue)

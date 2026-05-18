@@ -132,17 +132,21 @@ namespace Game.Core.Application.Session
             var clientRuntime = _sessionCoordinator != null
                 ? _sessionCoordinator.CurrentRuntime
                 : ClientRuntimeState.Empty;
+            var targetPeriodNumber = _current != null && _current.Progress != null
+                ? _current.Progress.ActivePeriodNumber
+                : 0;
 
             if (_current == null
                 || _current.Progress == null
-                || _current.Progress.HasPermanentIncomeLoss
+                || targetPeriodNumber <= 0
+                || _current.Progress.IncomeLossPeriodNumber == targetPeriodNumber
                 || clientRuntime == null
                 || !clientRuntime.HasSession)
             {
                 return;
             }
 
-            var nextProgress = _current.Progress.WithPermanentIncomeLoss(true);
+            var nextProgress = _current.Progress.WithIncomeLossPeriod(targetPeriodNumber);
             PersistProgress(clientRuntime, _current.Config, nextProgress);
             Publish(new SessionFlowRuntimeState(
                 _current.Config,

@@ -192,8 +192,8 @@ namespace Game.Core.Application.Periods
             }
 
             var periodStatistics = ResolvePeriodStatistics(clientRuntime, periodNumber);
-            var hasPermanentIncomeLoss = HasPermanentIncomeLoss(clientRuntime, sessionConfigRuntime);
-            var economyContext = BuildEconomyContext(clientRuntime, periodStatistics, periodNumber, hasPermanentIncomeLoss);
+            var hasIncomeLossForCurrentPeriod = HasIncomeLossForPeriod(clientRuntime, sessionConfigRuntime, periodNumber);
+            var economyContext = BuildEconomyContext(clientRuntime, periodStatistics, periodNumber, hasIncomeLossForCurrentPeriod);
             var historicalLabel = !string.IsNullOrWhiteSpace(configuredPeriod.HistoricalYear)
                 ? configuredPeriod.HistoricalYear
                 : !string.IsNullOrWhiteSpace(economyContext.HistoricalYear)
@@ -1031,11 +1031,15 @@ namespace Game.Core.Application.Periods
                 hasPermanentIncomeLoss);
         }
 
-        private bool HasPermanentIncomeLoss(ClientRuntimeState clientRuntime, SessionConfigRuntime sessionConfigRuntime)
+        private bool HasIncomeLossForPeriod(
+            ClientRuntimeState clientRuntime,
+            SessionConfigRuntime sessionConfigRuntime,
+            int periodNumber)
         {
             if (_persistenceService == null
                 || clientRuntime == null
                 || !clientRuntime.HasSession
+                || periodNumber <= 0
                 || !_persistenceService.TryLoadSessionFlowProgress(out var snapshot)
                 || snapshot == null)
             {
@@ -1055,7 +1059,9 @@ namespace Game.Core.Application.Periods
             }
 
             return snapshot.schemaVersion == (sessionConfigRuntime != null ? sessionConfigRuntime.SchemaVersion : 0)
-                && snapshot.hasPermanentIncomeLoss;
+                && (snapshot.incomeLossPeriodNumber > 0
+                    ? snapshot.incomeLossPeriodNumber == periodNumber
+                    : snapshot.hasPermanentIncomeLoss && snapshot.activePeriodNumber == periodNumber);
         }
 
         private static double NormalizePercentageToRate(double? rawPercent)
