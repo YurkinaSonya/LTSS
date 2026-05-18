@@ -44,6 +44,9 @@ namespace Game.Domain.GameFlow
         public int PeriodNumber { get; }
         public string Title { get; }
         public string HistoricalLabel { get; }
+        public string Phase { get; }
+        public string InternalCode { get; }
+        public IReadOnlyList<string> EnabledFeatures { get; }
         public string Summary { get; }
 
         public PeriodMeta(
@@ -51,13 +54,39 @@ namespace Game.Domain.GameFlow
             int periodNumber,
             string title,
             string historicalLabel,
+            string phase,
+            string internalCode,
+            IReadOnlyList<string> enabledFeatures,
             string summary)
         {
             PeriodId = periodId ?? string.Empty;
             PeriodNumber = periodNumber;
             Title = title ?? string.Empty;
             HistoricalLabel = historicalLabel ?? string.Empty;
+            Phase = phase ?? string.Empty;
+            InternalCode = internalCode ?? string.Empty;
+            EnabledFeatures = enabledFeatures != null
+                ? new List<string>(enabledFeatures)
+                : Array.Empty<string>();
             Summary = summary ?? string.Empty;
+        }
+
+        public bool HasFeature(string featureName)
+        {
+            if (EnabledFeatures == null || EnabledFeatures.Count == 0 || string.IsNullOrWhiteSpace(featureName))
+            {
+                return false;
+            }
+
+            for (var index = 0; index < EnabledFeatures.Count; index++)
+            {
+                if (string.Equals(EnabledFeatures[index], featureName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 
@@ -302,7 +331,15 @@ namespace Game.Domain.GameFlow
             double initialDepositBalance,
             string sourceSummary)
         {
-            Meta = meta ?? new PeriodMeta(string.Empty, 0, string.Empty, string.Empty, string.Empty);
+            Meta = meta ?? new PeriodMeta(
+                string.Empty,
+                0,
+                string.Empty,
+                string.Empty,
+                string.Empty,
+                string.Empty,
+                Array.Empty<string>(),
+                string.Empty);
             InfoBlockValues = infoBlockValues != null
                 ? new List<PeriodInfoBlockValue>(infoBlockValues)
                 : Array.Empty<PeriodInfoBlockValue>();
@@ -457,6 +494,8 @@ namespace Game.Domain.GameFlow
             0d,
             0d,
             0d,
+            0d,
+            0d,
             Array.Empty<UjeBreakdownItem>(),
             Array.Empty<PeriodValidationIssue>(),
             Array.Empty<PeriodAssetBalance>(),
@@ -472,6 +511,8 @@ namespace Game.Domain.GameFlow
         public double EndingCashEcu => CashBalance;
         public double DepositBalance { get; }
         public double EndingDepositEcu => DepositBalance;
+        public double AccumulatedUje { get; }
+        public double ProjectedUjeDelta { get; }
         public double Uje { get; }
         public IReadOnlyList<UjeBreakdownItem> UjeBreakdown { get; }
         public IReadOnlyList<PeriodValidationIssue> ValidationIssues { get; }
@@ -486,6 +527,8 @@ namespace Game.Domain.GameFlow
             double remainingToAllocate,
             double cashBalance,
             double depositBalance,
+            double accumulatedUje,
+            double projectedUjeDelta,
             double uje,
             IReadOnlyList<UjeBreakdownItem> ujeBreakdown,
             IReadOnlyList<PeriodValidationIssue> validationIssues,
@@ -499,6 +542,8 @@ namespace Game.Domain.GameFlow
             RemainingToAllocate = remainingToAllocate;
             CashBalance = cashBalance;
             DepositBalance = depositBalance;
+            AccumulatedUje = accumulatedUje;
+            ProjectedUjeDelta = projectedUjeDelta;
             Uje = uje;
             UjeBreakdown = ujeBreakdown != null
                 ? new List<UjeBreakdownItem>(ujeBreakdown)

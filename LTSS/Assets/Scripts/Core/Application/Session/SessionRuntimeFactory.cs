@@ -10,15 +10,18 @@ namespace Game.Core.Application.Session
     {
         private readonly IJsonSerializer _serializer;
         private readonly IJsonNodeParser _jsonNodeParser;
+        private readonly ISessionConfigRuntimeBuilder _sessionConfigRuntimeBuilder;
         private readonly IAppLogger _logger;
 
         public SessionRuntimeFactory(
             IJsonSerializer serializer,
             IJsonNodeParser jsonNodeParser,
+            ISessionConfigRuntimeBuilder sessionConfigRuntimeBuilder,
             IAppLogger logger)
         {
             _serializer = serializer;
             _jsonNodeParser = jsonNodeParser;
+            _sessionConfigRuntimeBuilder = sessionConfigRuntimeBuilder;
             _logger = logger;
         }
 
@@ -88,6 +91,10 @@ namespace Game.Core.Application.Session
                 bootstrapRun.CurrentPeriodNumber,
                 response.participant?.assignedGroupCode ?? runInfo?.AssignedGroupCode);
 
+            var sessionConfigDocument = ParseDocument(
+                response.session?.sessionConfigJson,
+                "sessionConfigJson");
+            var sessionConfigRuntime = BuildSessionConfigRuntime(sessionConfigDocument);
             var session = new SessionRuntimeModel(
                 response.session?.sessionDefinitionId ?? 0,
                 response.session?.code,
@@ -96,9 +103,9 @@ namespace Game.Core.Application.Session
                 SessionContractMapper.ToSessionStatus(response.session?.status),
                 response.session?.configVersion ?? 0,
                 response.session?.participantCountPlanned ?? 0,
-                new ParsedSessionConfigModel(ParseDocument(
-                    response.session?.sessionConfigJson,
-                    "sessionConfigJson")));
+                new ParsedSessionConfigModel(
+                    sessionConfigDocument,
+                    sessionConfigRuntime));
 
             var participant = new ParticipantRuntimeModel(
                 response.participant?.participantAccountId ?? 0,
@@ -222,6 +229,26 @@ namespace Game.Core.Application.Session
                 source.version,
                 document,
                 periodStatisticsByPeriod);
+        }
+
+        private SessionConfigRuntime BuildSessionConfigRuntime(ParsedJsonDocument document)
+        {
+            if (_sessionConfigRuntimeBuilder == null)
+            {
+                return SessionConfigRuntime.Empty;
+            }
+
+            if (_sessionConfigRuntimeBuilder.TryBuild(document, out var runtime, out var error))
+            {
+                return runtime ?? SessionConfigRuntime.Empty;
+            }
+
+            if (!string.IsNullOrWhiteSpace(error))
+            {
+                _logger.Warning($"Session config runtime build failed. {error}");
+            }
+
+            return runtime ?? SessionConfigRuntime.Empty;
         }
 
         private ParsedJsonDocument ParseDocument(string rawJson, string label)

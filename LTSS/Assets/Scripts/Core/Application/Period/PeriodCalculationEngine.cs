@@ -76,7 +76,9 @@ namespace Game.Core.Application.Periods
                 }
             }
 
-            var uje = definition.CalculationSettings.BaseUje;
+            var accumulatedUje = definition.CalculationSettings.BaseUje;
+            var projectedUjeDelta = 0d;
+            var uje = accumulatedUje;
 
             foreach (var expenseDefinition in definition.ExpenseDefinitions)
             {
@@ -95,8 +97,9 @@ namespace Game.Core.Application.Periods
                 var ratio = referenceAmount > 0d
                     ? Math.Min(1d, amount / referenceAmount)
                     : 0d;
-                var contribution = Math.Max(0d, expenseDefinition.UjeWeight) * ratio;
+                var contribution = expenseDefinition.UjeWeight * ratio;
 
+                projectedUjeDelta += contribution;
                 uje += contribution;
                 ujeBreakdown.Add(new UjeBreakdownItem(
                     expenseDefinition.Id,
@@ -168,6 +171,8 @@ namespace Game.Core.Application.Periods
                 remainingToAllocate,
                 cashBalance,
                 depositBalance,
+                accumulatedUje,
+                projectedUjeDelta,
                 uje,
                 ujeBreakdown,
                 validationIssues,

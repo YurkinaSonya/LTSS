@@ -17,5 +17,19 @@ namespace Game.Core.Application.Periods
                 ? value.Value.ToString("0.###", CultureInfo.InvariantCulture)
                 : fallback;
         }
+
+        public static string FormatGrowthPercent(double? multiplier, string fallback = "-")
+        {
+            if (!multiplier.HasValue)
+            {
+                return fallback;
+            }
+
+            var percent = (multiplier.Value - 1d) * 100d;
+            var prefix = percent > 0d
+                ? "+"
+                : string.Empty;
+            return $"{prefix}{percent.ToString("0.###", CultureInfo.InvariantCulture)}%";
+        }
     }
 }

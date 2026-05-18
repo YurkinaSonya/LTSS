@@ -19,6 +19,13 @@ namespace Game.Core.Application.Session
             bool isCheckpointSubmitted);
         bool TryLoadPeriodSnapshot(out PersistedPeriodSnapshot snapshot);
         void ClearPeriodSnapshot();
+        void SaveSessionFlowProgress(
+            string runId,
+            int sessionConfigVersion,
+            int schemaVersion,
+            SessionFlowProgressState progress);
+        bool TryLoadSessionFlowProgress(out PersistedSessionFlowProgressSnapshot snapshot);
+        void ClearSessionFlowProgress();
         void ClearAll();
     }
 }

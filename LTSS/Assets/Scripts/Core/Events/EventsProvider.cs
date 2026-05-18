@@ -66,6 +66,16 @@ namespace Game.Core.Events
             }
         }
 
+        public sealed class SessionFlowRuntimeChangedEvent
+        {
+            public SessionFlowRuntimeState RuntimeState { get; }
+
+            public SessionFlowRuntimeChangedEvent(SessionFlowRuntimeState runtimeState)
+            {
+                RuntimeState = runtimeState;
+            }
+        }
+
         public sealed class UserActionLoggedEvent
         {
             public UserActionLogEntry Entry { get; }

@@ -21,8 +21,10 @@ namespace Game.Core.Application.Session
         public int periodNumber;
         public string flowState;
         public bool hasPersistedInitialBalances;
+        public bool hasPersistedAccumulatedUje;
         public double initialCashBalance;
         public double initialDepositBalance;
+        public double accumulatedUje;
         public PeriodExpenseStateSnapshotDto[] expenses;
         public PeriodAssetOperationSnapshotDto[] assetOperations;
         public bool isCheckpointSubmitted;

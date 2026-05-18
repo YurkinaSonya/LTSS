@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Game.Core.Application.Periods;
 using Game.Domain.GameFlow;
 using UnityEngine;
@@ -13,7 +14,7 @@ public sealed class AssetOperationPopup : Popup
     private Text _limitLabel;
     private Text _messageLabel;
     private InputField _amountInput;
-    private Button _sourceButton;
+    private Dropdown _sourceDropdown;
     private Button _confirmButton;
     private Button _cancelButton;
     private bool _isBuilt;
@@ -51,7 +52,6 @@ public sealed class AssetOperationPopup : Popup
     {
         BindButton(_cancelButton, HandleCancel);
         BindButton(_confirmButton, HandleConfirm);
-        BindButton(_sourceButton, HandleChangeSource);
     }
 
     private void HandleCancel()
@@ -97,7 +97,7 @@ public sealed class AssetOperationPopup : Popup
         }
     }
 
-    private void HandleChangeSource()
+    private void HandleChangeSource(FundsSourceType source)
     {
         if (Context.PeriodGameplay == null)
         {
@@ -105,7 +105,7 @@ public sealed class AssetOperationPopup : Popup
             return;
         }
 
-        Context.PeriodGameplay.CycleAssetDialogSource();
+        Context.PeriodGameplay.SetAssetDialogSource(source);
         ApplyRuntime(Context.PeriodGameplay.Current);
     }
 
@@ -125,13 +125,28 @@ public sealed class AssetOperationPopup : Popup
 
         _titleLabel.text = dialog.Title;
         _subtitleLabel.text = dialog.Subtitle;
-        _sourceLabel.text = $"Источник: {PeriodContractMapper.ToFundsSourceLabel(dialog.SelectedSource)}";
+        _sourceLabel.text = "Источник средств";
 
-        if (_sourceButton != null)
+        if (_sourceDropdown != null)
         {
-            var canChangeSource = dialog.AllowedSources != null && dialog.AllowedSources.Count > 1;
-            _sourceButton.gameObject.SetActive(canChangeSource);
-            _sourceButton.interactable = canChangeSource;
+            var allowedSources = dialog.AllowedSources ?? Array.Empty<FundsSourceType>();
+            var selectedIndex = FindSourceIndex(allowedSources, dialog.SelectedSource);
+            var optionLabels = BuildSourceOptionLabels(allowedSources);
+
+            _sourceDropdown.onValueChanged.RemoveAllListeners();
+            RuntimeUiFactory.SetDropdownOptions(_sourceDropdown, optionLabels, selectedIndex);
+            _sourceDropdown.interactable = allowedSources.Count > 1;
+
+            if (allowedSources.Count > 0)
+            {
+                _sourceDropdown.onValueChanged.AddListener(index =>
+                {
+                    if (index >= 0 && index < allowedSources.Count)
+                    {
+                        HandleChangeSource(allowedSources[index]);
+                    }
+                });
+            }
         }
 
         _limitLabel.text = $"Доступно: {EcuFormatter.FormatAmount(dialog.MaxAmount)}";
@@ -180,10 +195,17 @@ public sealed class AssetOperationPopup : Popup
         sourceLayout.childForceExpandHeight = false;
         _sourceLabel = RuntimeUiFactory.CreateBodyText(sourcePanel, string.Empty);
         RuntimeUiFactory.AddFlexibleSpacer(sourcePanel);
-        _sourceButton = RuntimeUiFactory.CreateSecondaryButton(sourcePanel, "Сменить источник", 42f);
+        _sourceDropdown = RuntimeUiFactory.CreateDropdown(sourcePanel, 42f);
+
+        var sourceDropdownLayout = _sourceDropdown.gameObject.GetComponent<LayoutElement>();
+
+        if (sourceDropdownLayout != null)
+        {
+            sourceDropdownLayout.preferredWidth = 210f;
+        }
 
         _amountInput = RuntimeUiFactory.CreateInputField(content, "Сумма");
-        _amountInput.contentType = InputField.ContentType.DecimalNumber;
+        NumericInputParser.Configure(_amountInput);
         _limitLabel = RuntimeUiFactory.CreateCaption(content, string.Empty);
         _messageLabel = RuntimeUiFactory.CreateErrorText(content);
 
@@ -263,5 +285,40 @@ public sealed class AssetOperationPopup : Popup
         {
             button.onClick.AddListener(() => callback.Invoke());
         }
+    }
+
+    private static int FindSourceIndex(IReadOnlyList<FundsSourceType> sources, FundsSourceType selectedSource)
+    {
+        if (sources == null || sources.Count == 0)
+        {
+            return 0;
+        }
+
+        for (var index = 0; index < sources.Count; index++)
+        {
+            if (sources[index] == selectedSource)
+            {
+                return index;
+            }
+        }
+
+        return 0;
+    }
+
+    private static List<string> BuildSourceOptionLabels(IReadOnlyList<FundsSourceType> sources)
+    {
+        var result = new List<string>();
+
+        if (sources == null)
+        {
+            return result;
+        }
+
+        for (var index = 0; index < sources.Count; index++)
+        {
+            result.Add(PeriodContractMapper.ToFundsSourceSelectionLabel(sources[index]));
+        }
+
+        return result;
     }
 }

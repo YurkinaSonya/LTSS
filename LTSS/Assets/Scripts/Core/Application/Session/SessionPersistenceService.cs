@@ -48,6 +48,7 @@ namespace Game.Core.Application.Session
         private const string AuthContextKey = "session.auth_context";
         private const string BootstrapSnapshotKey = "session.bootstrap_snapshot";
         private const string PeriodSnapshotKey = "session.period_snapshot";
+        private const string SessionFlowProgressKey = "session.flow_progress";
 
         private readonly IJsonSerializer _serializer;
         private readonly IAppLogger _logger;
@@ -232,11 +233,116 @@ namespace Game.Core.Application.Session
             PlayerPrefs.Save();
         }
 
+        public void SaveSessionFlowProgress(
+            string runId,
+            int sessionConfigVersion,
+            int schemaVersion,
+            SessionFlowProgressState progress)
+        {
+            if (string.IsNullOrWhiteSpace(runId) || progress == null)
+            {
+                return;
+            }
+
+            var activeStep = progress.ActiveStep ?? SessionFlowStepDescriptor.Empty;
+            var snapshot = new PersistedSessionFlowProgressSnapshot
+            {
+                runId = runId,
+                sessionConfigVersion = sessionConfigVersion,
+                schemaVersion = schemaVersion,
+                completedPreSessionStepKeys = ToArray(progress.CompletedPreSessionStepKeys),
+                completedPeriodContentBlockKeys = ToArray(progress.CompletedPeriodContentBlockKeys),
+                completedPostPeriodSurveyKeys = ToArray(progress.CompletedPostPeriodSurveyKeys),
+                completedInterPeriodBlockKeys = ToArray(progress.CompletedInterPeriodBlockKeys),
+                completedPostSessionStepKeys = ToArray(progress.CompletedPostSessionStepKeys),
+                completedPeriodNumbers = ToArray(progress.CompletedPeriodNumbers),
+                activePeriodNumber = progress.ActivePeriodNumber,
+                activeStepKey = activeStep.Key,
+                activeStepScope = activeStep.Scope.ToString(),
+                activeStepType = activeStep.Type.ToString(),
+                activeStepTitle = activeStep.Title,
+                activeStepRequired = activeStep.IsRequired,
+                isPostSessionCompleted = progress.IsPostSessionCompleted,
+                isSessionCompleted = progress.IsSessionCompleted,
+                savedAtUtc = DateTime.UtcNow.ToString("O"),
+                canRestore = true
+            };
+
+            PlayerPrefs.SetString(SessionFlowProgressKey, _serializer.Serialize(snapshot));
+            PlayerPrefs.Save();
+        }
+
+        public bool TryLoadSessionFlowProgress(out PersistedSessionFlowProgressSnapshot snapshot)
+        {
+            snapshot = null;
+
+            if (!PlayerPrefs.HasKey(SessionFlowProgressKey))
+            {
+                return false;
+            }
+
+            var raw = PlayerPrefs.GetString(SessionFlowProgressKey, string.Empty);
+
+            if (!_serializer.TryDeserialize(raw, out snapshot, out var error)
+                || snapshot == null
+                || !snapshot.canRestore
+                || string.IsNullOrWhiteSpace(snapshot.runId))
+            {
+                _logger.Warning($"Stored session flow progress is invalid. {error}");
+                ClearSessionFlowProgress();
+                snapshot = null;
+                return false;
+            }
+
+            return true;
+        }
+
+        public void ClearSessionFlowProgress()
+        {
+            PlayerPrefs.DeleteKey(SessionFlowProgressKey);
+            PlayerPrefs.Save();
+        }
+
         public void ClearAll()
         {
             ClearAuthContext();
             ClearBootstrapSnapshot();
             ClearPeriodSnapshot();
+            ClearSessionFlowProgress();
+        }
+
+        private static string[] ToArray(System.Collections.Generic.IReadOnlyList<string> source)
+        {
+            if (source == null || source.Count == 0)
+            {
+                return Array.Empty<string>();
+            }
+
+            var result = new string[source.Count];
+
+            for (var index = 0; index < source.Count; index++)
+            {
+                result[index] = source[index] ?? string.Empty;
+            }
+
+            return result;
+        }
+
+        private static int[] ToArray(System.Collections.Generic.IReadOnlyList<int> source)
+        {
+            if (source == null || source.Count == 0)
+            {
+                return Array.Empty<int>();
+            }
+
+            var result = new int[source.Count];
+
+            for (var index = 0; index < source.Count; index++)
+            {
+                result[index] = source[index];
+            }
+
+            return result;
         }
     }
 }

@@ -29,6 +29,8 @@ public class UIController : MonoBehaviour, IInitializable, IDisposable
 
     private readonly Dictionary<ScreenId, ScreenView> _viewsByType =
         new Dictionary<ScreenId, ScreenView>();
+    private readonly Dictionary<ScreenId, Type> _runtimeScreenTypes =
+        new Dictionary<ScreenId, Type>();
 
     private ScreenController _currentScreen;
     private ScreenView _currentView;
@@ -47,6 +49,7 @@ public class UIController : MonoBehaviour, IInitializable, IDisposable
         IApplicationNavigationService navigation,
         IGameSessionService gameSessionService,
         ISessionCoordinator sessionCoordinator,
+        ISessionFlowCoordinator sessionFlowCoordinator,
         IPeriodGameplayService periodGameplayService,
         IUserActionLogger userActionLogger,
         IAppLogger appLogger,
@@ -62,6 +65,7 @@ public class UIController : MonoBehaviour, IInitializable, IDisposable
             popupNavigation,
             gameSessionService,
             sessionCoordinator,
+            sessionFlowCoordinator,
             periodGameplayService,
             userActionLogger,
             appLogger,
@@ -104,6 +108,7 @@ public class UIController : MonoBehaviour, IInitializable, IDisposable
     private void BuildScreenRegistry()
     {
         _viewsByType.Clear();
+        _runtimeScreenTypes.Clear();
 
         RegisterViews(_views);
 
@@ -129,6 +134,40 @@ public class UIController : MonoBehaviour, IInitializable, IDisposable
             }
 
             RegisterView(view);
+        }
+
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            Type[] types;
+
+            try
+            {
+                types = assembly.GetTypes();
+            }
+            catch
+            {
+                continue;
+            }
+
+            foreach (var type in types)
+            {
+                if (type == null || type.IsAbstract || !typeof(ScreenView).IsAssignableFrom(type))
+                {
+                    continue;
+                }
+
+                var attribute = Attribute.GetCustomAttribute(type, typeof(ScreenDefinitionAttribute))
+                    as ScreenDefinitionAttribute;
+
+                if (attribute == null
+                    || _viewsByType.ContainsKey(attribute.ScreenId)
+                    || _runtimeScreenTypes.ContainsKey(attribute.ScreenId))
+                {
+                    continue;
+                }
+
+                _runtimeScreenTypes.Add(attribute.ScreenId, type);
+            }
         }
 
         _appLogger?.Info($"UI screen registry built. Registered screens: {_viewsByType.Count}.");
@@ -244,13 +283,22 @@ public class UIController : MonoBehaviour, IInitializable, IDisposable
             return;
         }
 
-        if (!_viewsByType.TryGetValue(screenId, out var view) || view == null)
+        if (_viewsByType.TryGetValue(screenId, out var view) && view != null)
+        {
+            _currentView = Instantiate(view, transform);
+        }
+        else if (_runtimeScreenTypes.TryGetValue(screenId, out var runtimeType) && runtimeType != null)
+        {
+            var screenObject = new GameObject($"{screenId}Screen", typeof(RectTransform), typeof(CanvasGroup));
+            screenObject.transform.SetParent(transform, false);
+            _currentView = screenObject.AddComponent(runtimeType) as ScreenView;
+        }
+
+        if (_currentView == null)
         {
             _appLogger?.Warning($"No screen view is registered for '{screenId}'.");
             return;
         }
-
-        _currentView = Instantiate(view, transform);
         _currentScreen = _currentView.Construct(_uiContext);
         _currentScreen.Open();
         _currentScreenId = screenId;

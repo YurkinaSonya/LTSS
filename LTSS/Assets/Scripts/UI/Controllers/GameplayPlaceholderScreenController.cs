@@ -41,7 +41,7 @@ public sealed class GameplayPlaceholderScreenController : ScreenController
             OnBack,
             OnComplete,
             OnExpenseAmountChanged,
-            OnExpenseSourceToggle,
+            OnExpenseSourceChanged,
             OnAssetAction);
     }
 
@@ -60,9 +60,9 @@ public sealed class GameplayPlaceholderScreenController : ScreenController
         Context.PeriodGameplay?.SetExpenseAmount(expenseId, rawAmount);
     }
 
-    private void OnExpenseSourceToggle(string expenseId)
+    private void OnExpenseSourceChanged(string expenseId, FundsSourceType source)
     {
-        Context.PeriodGameplay?.CycleExpenseSource(expenseId);
+        Context.PeriodGameplay?.SetExpenseSource(expenseId, source);
     }
 
     private void OnAssetAction(string assetId, AssetOperationKind kind)

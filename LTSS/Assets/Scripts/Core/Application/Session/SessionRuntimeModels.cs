@@ -364,14 +364,20 @@ namespace Game.Core.Application.Session
     public sealed class ParsedSessionConfigModel
     {
         public static ParsedSessionConfigModel Empty { get; } =
-            new ParsedSessionConfigModel(ParsedJsonDocument.Empty);
+            new ParsedSessionConfigModel(ParsedJsonDocument.Empty, SessionConfigRuntime.Empty);
 
         public ParsedJsonDocument Document { get; }
+        public SessionConfigRuntime Runtime { get; }
         public string Summary => Document.Summary;
         public int? PeriodCount
         {
             get
             {
+                if (Runtime != null && Runtime.Periods != null && Runtime.Periods.Count > 0)
+                {
+                    return Runtime.Periods.Count;
+                }
+
                 if (!Document.IsValid || Document.Root.Kind != JsonValueKind.Object)
                 {
                     return null;
@@ -406,9 +412,12 @@ namespace Game.Core.Application.Session
             }
         }
 
-        public ParsedSessionConfigModel(ParsedJsonDocument document)
+        public ParsedSessionConfigModel(
+            ParsedJsonDocument document,
+            SessionConfigRuntime runtime)
         {
             Document = document ?? ParsedJsonDocument.Empty;
+            Runtime = runtime ?? SessionConfigRuntime.Empty;
         }
 
         private static int? FindDescendantArrayCount(JsonValue node, params string[] propertyNames)

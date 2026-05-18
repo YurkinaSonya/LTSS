@@ -99,19 +99,13 @@ namespace Game.Core.Application.Periods
                 return false;
             }
 
-            if (dto != null && dto.hasPersistedInitialBalances)
+            if (dto != null && (dto.hasPersistedInitialBalances || dto.hasPersistedAccumulatedUje))
             {
-                definition = new PeriodRuntimeDefinition(
-                    definition.Meta,
-                    definition.InfoBlockValues,
-                    definition.ExpenseDefinitions,
-                    definition.AssetDefinitions,
-                    definition.ValidationSettings,
-                    definition.CalculationSettings,
-                    definition.EconomyContext,
-                    dto.initialCashBalance,
-                    dto.initialDepositBalance,
-                    definition.SourceSummary);
+                definition = WithRuntimeOverrides(
+                    definition,
+                    dto.hasPersistedInitialBalances ? dto.initialCashBalance : (double?)null,
+                    dto.hasPersistedInitialBalances ? dto.initialDepositBalance : (double?)null,
+                    dto.hasPersistedAccumulatedUje ? dto.accumulatedUje : (double?)null);
             }
 
             var expenses = RestoreExpenseStates(definition, dto?.expenses);
@@ -166,16 +160,28 @@ namespace Game.Core.Application.Periods
                 ? clientRuntime.Bootstrap.Run.CurrentPeriodNumber
                 : 1;
 
+            var sessionConfigRuntime = clientRuntime.Bootstrap.Session.SessionConfig.Runtime ?? SessionConfigRuntime.Empty;
+            var configuredPeriod = sessionConfigRuntime.TryGetPeriod(periodNumber, out var resolvedPeriodRuntime)
+                ? resolvedPeriodRuntime
+                : SessionPeriodRuntime.Empty;
             var sessionDocument = clientRuntime.Bootstrap.Session.SessionConfig.Document;
             var assignedDocument = clientRuntime.Bootstrap.Participant.AssignedConfig.Document;
-            var sessionRoot = sessionDocument != null && sessionDocument.IsValid
+            var sessionRoot = sessionConfigRuntime.RootNode != null && sessionConfigRuntime.RootNode.Kind != JsonValueKind.Null
+                ? sessionConfigRuntime.RootNode
+                : sessionDocument != null && sessionDocument.IsValid
                 ? sessionDocument.Root
                 : JsonValue.Null;
             var assignedRoot = assignedDocument != null && assignedDocument.IsValid
                 ? assignedDocument.Root
                 : JsonValue.Null;
-            var periodNode = ResolvePeriodNode(sessionRoot, periodNumber);
-            var title = GetString(periodNode, "title", "name", "label");
+            var periodNode = configuredPeriod != null
+                             && configuredPeriod.RawNode != null
+                             && configuredPeriod.RawNode.Kind != JsonValueKind.Null
+                ? configuredPeriod.RawNode
+                : ResolvePeriodNode(sessionRoot, periodNumber);
+            var title = !string.IsNullOrWhiteSpace(configuredPeriod.Title)
+                ? configuredPeriod.Title
+                : GetString(periodNode, "title", "name", "label");
 
             if (string.IsNullOrWhiteSpace(title))
             {
@@ -184,7 +190,9 @@ namespace Game.Core.Application.Periods
 
             var periodStatistics = ResolvePeriodStatistics(clientRuntime, periodNumber);
             var economyContext = BuildEconomyContext(clientRuntime, periodStatistics, periodNumber);
-            var historicalLabel = !string.IsNullOrWhiteSpace(economyContext.HistoricalYear)
+            var historicalLabel = !string.IsNullOrWhiteSpace(configuredPeriod.HistoricalYear)
+                ? configuredPeriod.HistoricalYear
+                : !string.IsNullOrWhiteSpace(economyContext.HistoricalYear)
                 ? economyContext.HistoricalYear
                 : FirstString(
                     periodNode,
@@ -227,8 +235,11 @@ namespace Game.Core.Application.Periods
                     periodNumber,
                     title,
                     historicalLabel,
+                    configuredPeriod.Phase,
+                    configuredPeriod.InternalCode,
+                    configuredPeriod.EnabledFeatures,
                     clientRuntime.Bootstrap.Session.SessionConfig.Summary),
-                BuildStatisticsInfoBlockValues(periodNode, sessionRoot, periodStatistics),
+                BuildStatisticsInfoBlockValues(configuredPeriod, periodNode, sessionRoot, periodStatistics),
                 expenseDefinitions,
                 assetDefinitions,
                 validationSettings,
@@ -268,7 +279,7 @@ namespace Game.Core.Application.Periods
 
                 result.Add(new PeriodExpenseState(
                     expenseDefinition.Id,
-                    Math.Max(0d, expenseDefinition.DefaultAmount),
+                    0d,
                     defaultSource));
             }
 
@@ -318,7 +329,7 @@ namespace Game.Core.Application.Periods
 
                 result.Add(new PeriodExpenseState(
                     expenseDefinition.Id,
-                    matched != null ? Math.Max(0d, matched.amount) : Math.Max(0d, expenseDefinition.DefaultAmount),
+                    matched != null ? Math.Max(0d, matched.amount) : 0d,
                     source));
             }
 
@@ -420,6 +431,76 @@ namespace Game.Core.Application.Periods
                 number,
                 suffix,
                 text);
+        }
+
+        private IReadOnlyList<PeriodInfoBlockValue> BuildStatisticsInfoBlockValues(
+            SessionPeriodRuntime configuredPeriod,
+            JsonValue periodNode,
+            JsonValue sessionRoot,
+            PeriodStatisticsRuntime periodStatistics)
+        {
+            var result = new List<PeriodInfoBlockValue>();
+
+            if (configuredPeriod != null
+                && configuredPeriod.InfoBlock != null
+                && configuredPeriod.InfoBlock.Entries != null)
+            {
+                for (var index = 0; index < configuredPeriod.InfoBlock.Entries.Count; index++)
+                {
+                    var entry = configuredPeriod.InfoBlock.Entries[index];
+
+                    if (entry == null || string.IsNullOrWhiteSpace(entry.Id))
+                    {
+                        continue;
+                    }
+
+                    result.Add(new PeriodInfoBlockValue(
+                        entry.Id,
+                        string.IsNullOrWhiteSpace(entry.Label) ? entry.Id : entry.Label,
+                        entry.NumericValue,
+                        entry.Suffix,
+                        entry.RawText));
+                }
+            }
+
+            AddInfoValueIfMissing(
+                result,
+                CreateStatisticsInfoValue(
+                    periodNode,
+                    sessionRoot,
+                    "inflation",
+                    "Инфляция",
+                    periodStatistics != null ? periodStatistics.Inflation : null,
+                    "%",
+                    "inflation",
+                    "inflationRate"));
+            AddInfoValueIfMissing(
+                result,
+                CreateStatisticsInfoValue(
+                    periodNode,
+                    sessionRoot,
+                    "income_growth",
+                    "Номинальный рост дохода",
+                    periodStatistics != null ? periodStatistics.NominalIncomeGrowth : null,
+                    string.Empty,
+                    "nominalIncomeGrowth",
+                    "incomeGrowth",
+                    "salaryGrowth",
+                    "incomeGrowthRate"));
+            AddInfoValueIfMissing(
+                result,
+                CreateStatisticsInfoValue(
+                    periodNode,
+                    sessionRoot,
+                    "deposit_rate",
+                    "Ставка по депозиту",
+                    periodStatistics != null ? periodStatistics.DepositRate : null,
+                    "%",
+                    "depositRate",
+                    "depositInterestRate",
+                    "savingsRate"));
+
+            return result;
         }
 
         private IReadOnlyList<PeriodInfoBlockValue> BuildStatisticsInfoBlockValues(
@@ -540,6 +621,8 @@ namespace Game.Core.Application.Periods
                     allowedSources = defaults.AllowedSources;
                 }
 
+                rawMinimumAmount = ApplyRequiredMinimumOverride(expenseId, required, rawMinimumAmount);
+
                 result.Add(new PeriodExpenseDefinition(
                     expenseId,
                     string.IsNullOrWhiteSpace(title) ? defaults.Title : title,
@@ -553,10 +636,10 @@ namespace Game.Core.Application.Periods
                     GetString(expenseNode, "description", "hint")));
             }
 
-            EnsureExpense(result, "goods_services");
-            EnsureExpense(result, "housing_rent");
-            EnsureExpense(result, "leisure");
-            EnsureExpense(result, "holiday");
+            EnsureExpense(result, "goods_services", economyContext);
+            EnsureExpense(result, "housing_rent", economyContext);
+            EnsureExpense(result, "leisure", economyContext);
+            EnsureExpense(result, "holiday", economyContext);
 
             return SortExpenses(result);
         }
@@ -604,7 +687,16 @@ namespace Game.Core.Application.Periods
             PeriodStatisticsRuntime periodStatistics,
             int periodNumber)
         {
-            const double baseIncomeEcu = 100d;
+            var baseIncomeEcu = clientRuntime != null
+                                && clientRuntime.HasSession
+                                && clientRuntime.Bootstrap != null
+                                && clientRuntime.Bootstrap.Session != null
+                                && clientRuntime.Bootstrap.Session.SessionConfig != null
+                                && clientRuntime.Bootstrap.Session.SessionConfig.Runtime != null
+                                && clientRuntime.Bootstrap.Session.SessionConfig.Runtime.GlobalSettings != null
+                                && clientRuntime.Bootstrap.Session.SessionConfig.Runtime.GlobalSettings.BaseIncomeEcu.HasValue
+                ? Math.Max(0.0001d, clientRuntime.Bootstrap.Session.SessionConfig.Runtime.GlobalSettings.BaseIncomeEcu.Value)
+                : 100d;
             var nominalIncomeGrowth = periodStatistics != null && periodStatistics.NominalIncomeGrowth.HasValue && periodStatistics.NominalIncomeGrowth.Value > 0d
                 ? periodStatistics.NominalIncomeGrowth
                 : null;
@@ -617,7 +709,6 @@ namespace Game.Core.Application.Periods
             var currentIncomeEcu = baseIncomeEcu;
             var expenseInflationMultiplier = 1d;
             var currentInflationRate = NormalizePercentageToRate(inflation);
-            var currentDepositRate = NormalizePercentageToRate(depositRate);
 
             if (periodNumber > 1)
             {
@@ -641,8 +732,8 @@ namespace Game.Core.Application.Periods
             }
 
             var currentInflationMultiplier = 1d + currentInflationRate;
-            var cashValueMultiplier = Math.Max(0d, 1d - currentInflationRate);
-            var depositValueMultiplier = Math.Max(0d, 1d + currentDepositRate - currentInflationRate);
+            var cashValueMultiplier = 1d;
+            var depositValueMultiplier = 1d;
 
             return new PeriodEconomyContext(
                 periodNumber,
@@ -792,7 +883,10 @@ namespace Game.Core.Application.Periods
             return false;
         }
 
-        private static void EnsureExpense(ICollection<PeriodExpenseDefinition> definitions, string expenseId)
+        private static void EnsureExpense(
+            ICollection<PeriodExpenseDefinition> definitions,
+            string expenseId,
+            PeriodEconomyContext economyContext)
         {
             foreach (var definition in definitions)
             {
@@ -802,7 +896,56 @@ namespace Game.Core.Application.Periods
                 }
             }
 
-            definitions.Add(GetFallbackExpense(expenseId));
+            definitions.Add(ApplyEconomyContextToExpenseDefinition(GetFallbackExpense(expenseId), economyContext));
+        }
+
+        private static void AddInfoValueIfMissing(
+            ICollection<PeriodInfoBlockValue> values,
+            PeriodInfoBlockValue candidate)
+        {
+            if (values == null || candidate == null || string.IsNullOrWhiteSpace(candidate.Id))
+            {
+                return;
+            }
+
+            foreach (var value in values)
+            {
+                if (value != null
+                    && string.Equals(value.Id, candidate.Id, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+            }
+
+            values.Add(candidate);
+        }
+
+        private static PeriodExpenseDefinition ApplyEconomyContextToExpenseDefinition(
+            PeriodExpenseDefinition definition,
+            PeriodEconomyContext economyContext)
+        {
+            if (definition == null)
+            {
+                return null;
+            }
+
+            var inflationMultiplier = economyContext != null
+                ? Math.Max(0.0001d, economyContext.ExpenseInflationMultiplier)
+                : 1d;
+
+            return new PeriodExpenseDefinition(
+                definition.Id,
+                definition.Title,
+                definition.IsRequired,
+                ApplyInflationMultiplier(definition.DefaultAmount, inflationMultiplier),
+                ApplyInflationMultiplier(definition.MinimumAmount, inflationMultiplier),
+                definition.MaximumAmount > 0d
+                    ? ApplyInflationMultiplier(definition.MaximumAmount, inflationMultiplier)
+                    : 0d,
+                definition.AllowedSources,
+                definition.UjeWeight,
+                ApplyInflationMultiplier(definition.UjeReferenceAmount, inflationMultiplier),
+                definition.Description);
         }
 
         private static IReadOnlyList<PeriodExpenseDefinition> SortExpenses(IReadOnlyList<PeriodExpenseDefinition> definitions)
@@ -851,6 +994,23 @@ namespace Game.Core.Application.Periods
             return amount * Math.Max(0.0001d, multiplier);
         }
 
+        private static double ApplyRequiredMinimumOverride(string expenseId, bool isRequired, double minimumAmount)
+        {
+            if (!isRequired)
+            {
+                return minimumAmount;
+            }
+
+            switch (expenseId)
+            {
+                case "goods_services":
+                case "housing_rent":
+                    return Math.Max(20d, minimumAmount);
+                default:
+                    return minimumAmount;
+            }
+        }
+
         private static PeriodExpenseDefinition GetFallbackExpense(string expenseId)
         {
             switch (expenseId)
@@ -860,8 +1020,8 @@ namespace Game.Core.Application.Periods
                         "housing_rent",
                         "Аренда жилья",
                         true,
-                        35d,
-                        30d,
+                        0d,
+                        20d,
                         0d,
                         new[] { FundsSourceType.CurrentIncome, FundsSourceType.Cash },
                         28d,
@@ -897,8 +1057,8 @@ namespace Game.Core.Application.Periods
                         "goods_services",
                         "Покупка товаров и услуг",
                         true,
+                        0d,
                         20d,
-                        15d,
                         0d,
                         new[] { FundsSourceType.CurrentIncome, FundsSourceType.Cash },
                         22d,
@@ -1032,6 +1192,35 @@ namespace Game.Core.Application.Periods
             }
 
             return char.ToUpperInvariant(value[0]) + value.Substring(1);
+        }
+
+        private static PeriodRuntimeDefinition WithRuntimeOverrides(
+            PeriodRuntimeDefinition definition,
+            double? initialCashBalance = null,
+            double? initialDepositBalance = null,
+            double? accumulatedUje = null)
+        {
+            if (definition == null)
+            {
+                return null;
+            }
+
+            var settings = definition.CalculationSettings;
+            return new PeriodRuntimeDefinition(
+                definition.Meta,
+                definition.InfoBlockValues,
+                definition.ExpenseDefinitions,
+                definition.AssetDefinitions,
+                definition.ValidationSettings,
+                new PeriodCalculationSettings(
+                    settings.CurrentIncomeEcu,
+                    settings.BaseIncomeEcu,
+                    accumulatedUje ?? settings.BaseUje,
+                    settings.MaximumUje),
+                definition.EconomyContext,
+                initialCashBalance ?? definition.InitialCashBalance,
+                initialDepositBalance ?? definition.InitialDepositBalance,
+                definition.SourceSummary);
         }
 
         private static double? FirstNumber(JsonValue primary, JsonValue secondary, JsonValue tertiary, params string[] names)

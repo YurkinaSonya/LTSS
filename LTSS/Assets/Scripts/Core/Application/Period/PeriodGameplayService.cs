@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using Game.Core.Application.Logging;
@@ -33,6 +33,7 @@ namespace Game.Core.Application.Periods
         private int _pendingCarryOverTargetPeriodNumber;
         private double _pendingCarryOverCashBalance;
         private double _pendingCarryOverDepositBalance;
+        private double _pendingCarryOverAccumulatedUje;
 
         public PeriodRuntimeState Current => _current;
 
@@ -135,7 +136,7 @@ namespace Game.Core.Application.Periods
                         ? PeriodFlowState.PeriodClosed
                         : PeriodFlowState.PeriodActive,
                     statusMessage: restoredState.IsCheckpointSubmitted
-                        ? "Период уже сохранен."
+                        ? "Период уже сохранён."
                         : "Черновик периода восстановлен.",
                     assetDialog: AssetOperationDialogState.Closed));
 
@@ -178,7 +179,7 @@ namespace Game.Core.Application.Periods
                 return;
             }
 
-            if (!TryParseAmount(rawAmount, out var amount))
+            if (!NumericInputParser.TryParseNonNegativeAmount(rawAmount, out var amount))
             {
                 return;
             }
@@ -294,6 +295,76 @@ namespace Game.Core.Application.Periods
                 true);
         }
 
+        public void SetExpenseSource(string expenseId, FundsSourceType source)
+        {
+            if (!_current.HasDefinition || !CanEditCurrentState() || string.IsNullOrWhiteSpace(expenseId))
+            {
+                return;
+            }
+
+            var definition = FindExpenseDefinition(expenseId);
+
+            if (definition == null || definition.AllowedSources == null || definition.AllowedSources.Count == 0)
+            {
+                return;
+            }
+
+            var sourceAllowed = false;
+
+            foreach (var allowedSource in definition.AllowedSources)
+            {
+                if (allowedSource == source)
+                {
+                    sourceAllowed = true;
+                    break;
+                }
+            }
+
+            if (!sourceAllowed)
+            {
+                return;
+            }
+
+            var nextExpenses = new List<PeriodExpenseState>(_current.Expenses.Count);
+
+            foreach (var expenseState in _current.Expenses)
+            {
+                if (expenseState == null)
+                {
+                    continue;
+                }
+
+                if (!string.Equals(expenseState.ExpenseId, expenseId, StringComparison.Ordinal))
+                {
+                    nextExpenses.Add(expenseState);
+                    continue;
+                }
+
+                if (expenseState.Source == source)
+                {
+                    nextExpenses.Add(expenseState);
+                    continue;
+                }
+
+                if (!CanAssignExpenseAmount(expenseState, source, expenseState.Amount, out var sourceValidationMessage))
+                {
+                    RejectExpenseMutation(sourceValidationMessage);
+                    return;
+                }
+
+                nextExpenses.Add(expenseState.With(source: source));
+            }
+
+            ApplyMutation(
+                nextExpenses,
+                _current.AssetOperations,
+                _current.AssetDialog.IsOpen ? _current.AssetDialog : AssetOperationDialogState.Closed,
+                PeriodFlowState.PeriodActive,
+                string.Empty,
+                string.Empty,
+                true);
+        }
+
         public void OpenAssetDialog(string assetId, AssetOperationKind kind)
         {
             if (!_current.HasDefinition || !CanEditCurrentState() || _current.AssetDialog.IsOpen)
@@ -352,6 +423,47 @@ namespace Game.Core.Application.Periods
             }
         }
 
+        public void SetAssetDialogSource(FundsSourceType source)
+        {
+            if (_current == null || !CanEditCurrentState() || !_current.AssetDialog.IsOpen)
+            {
+                return;
+            }
+
+            var allowedSources = _current.AssetDialog.AllowedSources;
+
+            if (allowedSources == null || allowedSources.Count == 0)
+            {
+                return;
+            }
+
+            var sourceAllowed = false;
+
+            foreach (var allowedSource in allowedSources)
+            {
+                if (allowedSource == source)
+                {
+                    sourceAllowed = true;
+                    break;
+                }
+            }
+
+            if (!sourceAllowed || _current.AssetDialog.SelectedSource == source)
+            {
+                return;
+            }
+
+            var rebuiltDialog = BuildAssetDialog(
+                _current.AssetDialog.AssetId,
+                _current.AssetDialog.Kind,
+                source);
+
+            if (rebuiltDialog != null)
+            {
+                Publish(_current.With(assetDialog: rebuiltDialog, statusMessage: string.Empty));
+            }
+        }
+
         public void SubmitAssetDialog(string rawAmount)
         {
             Debug.Log($"[PeriodDebug] SubmitAssetDialog called. RawAmount='{rawAmount}'.");
@@ -372,7 +484,7 @@ namespace Game.Core.Application.Periods
                 return;
             }
 
-            if (!TryParseAmount(rawAmount, out var amount) || amount <= 0d)
+            if (!NumericInputParser.TryParseNonNegativeAmount(rawAmount, out var amount) || amount <= 0d)
             {
                 Debug.Log($"[PeriodDebug] SubmitAssetDialog blocked. Parsed amount is invalid: {amount}.");
                 Publish(_current.With(statusMessage: "Введите корректную сумму."));
@@ -511,11 +623,23 @@ namespace Game.Core.Application.Periods
                     if (response != null && response.IsSuccess)
                     {
                         var submittedAt = DateTime.UtcNow.ToString("O");
+                        var submittedPeriodNumber = _current.PeriodNumber;
+                        var totalPeriods = ResolveTotalPeriodCount(clientRuntime);
+                        var hasNextPeriod = totalPeriods > 0 && _current.PeriodNumber < totalPeriods;
+                        var nextPeriodNumber = hasNextPeriod
+                            ? _current.PeriodNumber + 1
+                            : 0;
+
+                        if (hasNextPeriod)
+                        {
+                            StorePendingCarryOver(_current.RunId, nextPeriodNumber, summary);
+                            _sessionCoordinator?.UpdateLocalRunProgress(nextPeriodNumber, RunLifecycleStatus.InProgress);
+                        }
 
                         Publish(_current.With(
                             flowState: PeriodFlowState.PeriodClosed,
                             isCheckpointSubmitted: true,
-                            statusMessage: "Период сохранен.",
+                            statusMessage: "Период сохранён.",
                             lastError: string.Empty,
                             submittedAtUtc: submittedAt,
                             hasPendingLocalChanges: false));
@@ -527,25 +651,25 @@ namespace Game.Core.Application.Periods
                             "period_checkpoint_submit_succeeded",
                             BuildPeriodMetadata(_current));
 
-                        var totalPeriods = ResolveTotalPeriodCount(clientRuntime);
-                        var hasNextPeriod = totalPeriods > 0 && _current.PeriodNumber < totalPeriods;
-
                         if (hasNextPeriod)
                         {
-                            var nextPeriodNumber = _current.PeriodNumber + 1;
-                            StorePendingCarryOver(_current.RunId, nextPeriodNumber, _current.Summary);
-                            _persistenceService?.ClearPeriodSnapshot();
-                            _sessionCoordinator?.UpdateLocalRunProgress(nextPeriodNumber, RunLifecycleStatus.InProgress);
-                            ActivateCurrentPeriod();
+                            if (_current.FlowState == PeriodFlowState.PeriodClosed
+                                && _current.PeriodNumber == submittedPeriodNumber)
+                            {
+                                _persistenceService?.ClearPeriodSnapshot();
+                                ActivateCurrentPeriod();
+                            }
+
                             return;
                         }
 
-                        var completionMessage = "Все периоды завершены. Далее будет пост-экспериментальный этап.";
+                        _persistenceService?.ClearPeriodSnapshot();
                         Publish(_current.With(
-                            statusMessage: completionMessage,
+                            statusMessage: hasNextPeriod
+                                ? "Период сохранён. Подготовка следующего шага..."
+                                : "Период сохранён. Завершение сценария...",
                             lastError: string.Empty));
                         PersistCurrentState();
-                        _sessionCoordinator?.CompleteRunLocally(completionMessage, "run_completed_after_last_period");
                         return;
                     }
 
@@ -620,8 +744,10 @@ namespace Game.Core.Application.Periods
                 periodNumber = _current.PeriodNumber,
                 flowState = PeriodContractMapper.ToPeriodFlowStateCode(_current.FlowState),
                 hasPersistedInitialBalances = true,
+                hasPersistedAccumulatedUje = true,
                 initialCashBalance = _current.Definition.InitialCashBalance,
                 initialDepositBalance = _current.Definition.InitialDepositBalance,
+                accumulatedUje = _current.Definition.CalculationSettings.BaseUje,
                 expenses = BuildExpenseSnapshots(_current.Expenses),
                 assetOperations = BuildOperationSnapshots(_current.AssetOperations),
                 isCheckpointSubmitted = _current.IsCheckpointSubmitted,
@@ -937,26 +1063,6 @@ namespace Game.Core.Application.Periods
             return null;
         }
 
-        private static bool TryParseAmount(string rawAmount, out double amount)
-        {
-            amount = 0d;
-            var normalized = (rawAmount ?? string.Empty).Trim();
-
-            if (string.IsNullOrWhiteSpace(normalized))
-            {
-                return true;
-            }
-
-            normalized = normalized.Replace(',', '.');
-
-            return double.TryParse(
-                normalized,
-                NumberStyles.Float,
-                CultureInfo.InvariantCulture,
-                out amount)
-                && amount >= 0d;
-        }
-
         private static string FirstBlockingValidationMessage(PeriodCalculationSummary summary)
         {
             if (summary == null || summary.ValidationIssues == null)
@@ -1078,6 +1184,7 @@ namespace Game.Core.Application.Periods
             _pendingCarryOverTargetPeriodNumber = targetPeriodNumber > 0 ? targetPeriodNumber : 0;
             _pendingCarryOverCashBalance = summary != null ? Math.Max(0d, summary.CashBalance) : 0d;
             _pendingCarryOverDepositBalance = summary != null ? Math.Max(0d, summary.DepositBalance) : 0d;
+            _pendingCarryOverAccumulatedUje = summary != null ? Math.Max(0d, summary.Uje) : 0d;
         }
 
         private void ClearPendingCarryOver()
@@ -1086,6 +1193,7 @@ namespace Game.Core.Application.Periods
             _pendingCarryOverTargetPeriodNumber = 0;
             _pendingCarryOverCashBalance = 0d;
             _pendingCarryOverDepositBalance = 0d;
+            _pendingCarryOverAccumulatedUje = 0d;
         }
 
         private PeriodRuntimeState TryApplyPendingCarryOver(PeriodRuntimeState state)
@@ -1101,26 +1209,20 @@ namespace Game.Core.Application.Periods
             }
 
             var currentDefinition = state.Definition;
-            var adjustedInitialCashBalance = ApplyCarryOverMultiplier(
-                _pendingCarryOverCashBalance,
-                currentDefinition.EconomyContext != null
-                    ? currentDefinition.EconomyContext.CashValueMultiplier
-                    : 1d);
-            var adjustedInitialDepositBalance = ApplyCarryOverMultiplier(
-                _pendingCarryOverDepositBalance,
-                currentDefinition.EconomyContext != null
-                    ? currentDefinition.EconomyContext.DepositValueMultiplier
-                    : 1d);
             var nextDefinition = new PeriodRuntimeDefinition(
                 currentDefinition.Meta,
                 currentDefinition.InfoBlockValues,
                 currentDefinition.ExpenseDefinitions,
                 currentDefinition.AssetDefinitions,
                 currentDefinition.ValidationSettings,
-                currentDefinition.CalculationSettings,
+                new PeriodCalculationSettings(
+                    currentDefinition.CalculationSettings.CurrentIncomeEcu,
+                    currentDefinition.CalculationSettings.BaseIncomeEcu,
+                    _pendingCarryOverAccumulatedUje,
+                    currentDefinition.CalculationSettings.MaximumUje),
                 currentDefinition.EconomyContext,
-                adjustedInitialCashBalance,
-                adjustedInitialDepositBalance,
+                _pendingCarryOverCashBalance,
+                _pendingCarryOverDepositBalance,
                 currentDefinition.SourceSummary);
             var nextSummary = _calculationEngine.Recalculate(
                 nextDefinition,
@@ -1143,16 +1245,6 @@ namespace Game.Core.Application.Periods
 
             ClearPendingCarryOver();
             return nextState;
-        }
-
-        private static double ApplyCarryOverMultiplier(double amount, double multiplier)
-        {
-            if (amount <= 0d)
-            {
-                return 0d;
-            }
-
-            return Math.Max(0d, amount * Math.Max(0d, multiplier));
         }
     }
 }

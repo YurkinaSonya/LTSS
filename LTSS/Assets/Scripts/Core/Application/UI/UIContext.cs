@@ -14,6 +14,7 @@ namespace Game.Core.Application.UI
         public IPopupNavigationService Popups { get; }
         public IGameSessionService GameSession { get; }
         public ISessionCoordinator SessionCoordinator { get; }
+        public ISessionFlowCoordinator SessionFlow { get; }
         public IPeriodGameplayService PeriodGameplay { get; }
         public IUserActionLogger UserActions { get; }
         public IAppLogger Logger { get; }
@@ -26,6 +27,7 @@ namespace Game.Core.Application.UI
             IPopupNavigationService popups,
             IGameSessionService gameSession,
             ISessionCoordinator sessionCoordinator,
+            ISessionFlowCoordinator sessionFlow,
             IPeriodGameplayService periodGameplay,
             IUserActionLogger userActions,
             IAppLogger logger,
@@ -37,6 +39,7 @@ namespace Game.Core.Application.UI
             Popups = popups;
             GameSession = gameSession;
             SessionCoordinator = sessionCoordinator;
+            SessionFlow = sessionFlow;
             PeriodGameplay = periodGameplay;
             UserActions = userActions;
             Logger = logger;

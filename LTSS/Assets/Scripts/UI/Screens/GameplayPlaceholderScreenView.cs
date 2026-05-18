@@ -17,7 +17,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         public GameObject RequiredBadge;
         public Text RequiredBadgeLabel;
         public InputField AmountInput;
-        public Button SourceButton;
+        public Dropdown SourceDropdown;
     }
 
     private sealed class AssetCardWidgets
@@ -41,6 +41,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
     private Text _periodSubtitleLabel;
     private Text _phaseLabel;
     private Text _ujeValueLabel;
+    private Text _ujeDeltaLabel;
     private Text _incomeValueLabel;
     private Text _remainingValueLabel;
     private Text _validationLabel;
@@ -57,6 +58,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
     private readonly Dictionary<string, AssetCardWidgets> _assetCards = new Dictionary<string, AssetCardWidgets>();
     private readonly Dictionary<string, InfoRowWidgets> _infoRows = new Dictionary<string, InfoRowWidgets>();
     private bool _isBuilt;
+    private static readonly Color UjePositiveColor = new Color32(84, 156, 110, 255);
 
     public override ScreenController Construct(UIContext context)
     {
@@ -69,7 +71,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         Action onBack,
         Action onComplete,
         Action<string, string> onExpenseAmountChanged,
-        Action<string> onExpenseSourceToggle,
+        Action<string, FundsSourceType> onExpenseSourceChanged,
         Action<string, AssetOperationKind> onAssetAction)
     {
         EnsureBuilt();
@@ -100,7 +102,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         ApplyHeader(runtimeState);
         ApplyMetrics(runtimeState);
         ApplyInfo(runtimeState);
-        ApplyExpenses(runtimeState, onExpenseAmountChanged, onExpenseSourceToggle);
+        ApplyExpenses(runtimeState, onExpenseAmountChanged, onExpenseSourceChanged);
         ApplyAssets(runtimeState, onAssetAction);
         ApplyFooter(runtimeState);
     }
@@ -230,15 +232,23 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
             subtitle += $"  |  {meta.HistoricalLabel}";
         }
 
+        if (!string.IsNullOrWhiteSpace(meta.Phase))
+        {
+            subtitle += $"  |  {meta.Phase}";
+        }
+
         _periodSubtitleLabel.text = subtitle;
-        _phaseLabel.text = FormatFlow(runtimeState.FlowState);
+        _phaseLabel.text = !string.IsNullOrWhiteSpace(meta.Phase)
+            ? $"{meta.Phase} / {FormatFlow(runtimeState.FlowState)}"
+            : FormatFlow(runtimeState.FlowState);
     }
 
     private void ApplyMetrics(PeriodRuntimeState runtimeState)
     {
         var summary = runtimeState.Summary ?? PeriodCalculationSummary.Empty;
 
-        _ujeValueLabel.text = summary.Uje.ToString("0.0", CultureInfo.InvariantCulture);
+        _ujeValueLabel.text = summary.AccumulatedUje.ToString("0.0", CultureInfo.InvariantCulture);
+        ApplyUjeDelta(summary.ProjectedUjeDelta);
         _incomeValueLabel.text = FormatMoney(summary.CurrentIncomeEcu);
         _remainingValueLabel.text = FormatMoney(summary.RemainingToAllocate);
         _remainingValueLabel.color = summary.RemainingToAllocate < -0.01d
@@ -258,7 +268,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
             }
 
             widgets.Label.text = infoValue.Label;
-            widgets.Value.text = infoValue.HasValue ? infoValue.DisplayValue : "—";
+            widgets.Value.text = FormatInfoValue(infoValue);
             widgets.Value.color = infoValue.HasValue
                 ? RuntimeUiFactory.TextPrimaryColor
                 : RuntimeUiFactory.TextSecondaryColor;
@@ -268,7 +278,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
     private void ApplyExpenses(
         PeriodRuntimeState runtimeState,
         Action<string, string> onExpenseAmountChanged,
-        Action<string> onExpenseSourceToggle)
+        Action<string, FundsSourceType> onExpenseSourceChanged)
     {
         var canEdit = runtimeState.FlowState != PeriodFlowState.PeriodCheckpointSubmitting
             && runtimeState.FlowState != PeriodFlowState.PeriodClosed
@@ -313,13 +323,27 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
             widgets.AmountInput.onValueChanged.AddListener(value => onExpenseAmountChanged?.Invoke(expenseDefinition.Id, value));
             widgets.AmountInput.interactable = canEdit;
 
-            RuntimeUiFactory.SetButtonText(
-                widgets.SourceButton,
-                PeriodContractMapper.ToFundsSourceLabel(expenseState != null
-                    ? expenseState.Source
-                    : FundsSourceType.CurrentIncome));
-            BindButton(widgets.SourceButton, () => onExpenseSourceToggle?.Invoke(expenseDefinition.Id));
-            widgets.SourceButton.interactable = canEdit && expenseDefinition.AllowedSources != null && expenseDefinition.AllowedSources.Count > 1;
+            var allowedSources = expenseDefinition.AllowedSources ?? Array.Empty<FundsSourceType>();
+            var selectedSource = expenseState != null
+                ? expenseState.Source
+                : FundsSourceType.CurrentIncome;
+            var selectedIndex = FindSourceIndex(allowedSources, selectedSource);
+            var optionLabels = BuildSourceOptionLabels(allowedSources);
+
+            widgets.SourceDropdown.onValueChanged.RemoveAllListeners();
+            RuntimeUiFactory.SetDropdownOptions(widgets.SourceDropdown, optionLabels, selectedIndex);
+            widgets.SourceDropdown.interactable = canEdit && allowedSources.Count > 1;
+
+            if (allowedSources.Count > 0)
+            {
+                widgets.SourceDropdown.onValueChanged.AddListener(index =>
+                {
+                    if (index >= 0 && index < allowedSources.Count)
+                    {
+                        onExpenseSourceChanged?.Invoke(expenseDefinition.Id, allowedSources[index]);
+                    }
+                });
+            }
         }
     }
 
@@ -447,11 +471,11 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
             requiredBadge.gameObject.SetActive(false);
 
             var amountField = RuntimeUiFactory.CreateInputField(row, "0");
-            amountField.contentType = InputField.ContentType.DecimalNumber;
+            NumericInputParser.Configure(amountField);
             AddLayoutElement(amountField.gameObject, minimumHeight: 25f, preferredWidth: 160f);
 
-            var sourceButton = RuntimeUiFactory.CreateSecondaryButton(row, "Источник", 46f);
-            AddLayoutElement(sourceButton.gameObject, preferredWidth: 180f);
+            var sourceDropdown = RuntimeUiFactory.CreateDropdown(row, 46f);
+            AddLayoutElement(sourceDropdown.gameObject, preferredWidth: 180f);
 
             _expenseRows[definition.Id] = new ExpenseRowWidgets
             {
@@ -461,7 +485,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
                 RequiredBadge = requiredBadge.gameObject,
                 RequiredBadgeLabel = requiredLabel,
                 AmountInput = amountField,
-                SourceButton = sourceButton
+                SourceDropdown = sourceDropdown
             };
         }
     }
@@ -634,6 +658,18 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         return EcuFormatter.FormatAmount(value);
     }
 
+    private static string FormatInfoValue(PeriodInfoBlockValue infoValue)
+    {
+        if (infoValue == null || !infoValue.HasValue)
+        {
+            return "-";
+        }
+
+        return string.Equals(infoValue.Id, "income_growth", StringComparison.Ordinal)
+            ? EcuFormatter.FormatGrowthPercent(infoValue.NumericValue, infoValue.RawText)
+            : infoValue.DisplayValue;
+    }
+
     private static string FormatFlow(PeriodFlowState flowState)
     {
         switch (flowState)
@@ -657,7 +693,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         }
     }
 
-    private static Text CreateMetricCard(Transform parent, string label, string value)
+    private Text CreateMetricCard(Transform parent, string label, string value)
     {
         var card = RuntimeUiFactory.CreateSurface($"{label}Card", parent, RuntimeUiFactory.SurfaceColor);
         AddLayoutElement(card.gameObject, preferredWidth: 0f, preferredHeight: 126f, flexibleWidth: 1f);
@@ -671,8 +707,42 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         layout.childForceExpandWidth = true;
         layout.childForceExpandHeight = false;
 
+        if (_ujeValueLabel == null && _ujeDeltaLabel == null)
+        {
+            RuntimeUiFactory.CreateCaption(card, "\u0423\u0416\u042D (\u0436\u0438\u0437\u043d\u0435\u043d\u043d\u0430\u044f \u044d\u043d\u0435\u0440\u0433\u0438\u044f)");
+            var valueRow = CreateRow(card, "UjeValueRow", 12f, TextAnchor.MiddleLeft);
+            var mainValue = RuntimeUiFactory.CreateValueText(valueRow, value, 34, TextAnchor.MiddleLeft);
+            _ujeDeltaLabel = RuntimeUiFactory.CreateValueText(valueRow, string.Empty, 20, TextAnchor.MiddleLeft);
+            AddLayoutElement(_ujeDeltaLabel.gameObject, preferredWidth: 90f);
+            _ujeDeltaLabel.gameObject.SetActive(false);
+            return mainValue;
+        }
+
         RuntimeUiFactory.CreateCaption(card, label);
         return RuntimeUiFactory.CreateValueText(card, value, 34, TextAnchor.MiddleLeft);
+    }
+
+    private void ApplyUjeDelta(double delta)
+    {
+        if (_ujeDeltaLabel == null)
+        {
+            return;
+        }
+
+        if (Math.Abs(delta) <= 0.001d)
+        {
+            _ujeDeltaLabel.text = string.Empty;
+            _ujeDeltaLabel.gameObject.SetActive(false);
+            return;
+        }
+
+        _ujeDeltaLabel.text = delta > 0d
+            ? $"+{delta.ToString("0.0", CultureInfo.InvariantCulture)}"
+            : delta.ToString("0.0", CultureInfo.InvariantCulture);
+        _ujeDeltaLabel.color = delta > 0d
+            ? UjePositiveColor
+            : RuntimeUiFactory.DangerColor;
+        _ujeDeltaLabel.gameObject.SetActive(true);
     }
 
     private static RectTransform CreateSection(Transform parent, string title)
@@ -802,6 +872,41 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         {
             button.onClick.AddListener(() => callback.Invoke());
         }
+    }
+
+    private static int FindSourceIndex(IReadOnlyList<FundsSourceType> sources, FundsSourceType selectedSource)
+    {
+        if (sources == null || sources.Count == 0)
+        {
+            return 0;
+        }
+
+        for (var index = 0; index < sources.Count; index++)
+        {
+            if (sources[index] == selectedSource)
+            {
+                return index;
+            }
+        }
+
+        return 0;
+    }
+
+    private static List<string> BuildSourceOptionLabels(IReadOnlyList<FundsSourceType> sources)
+    {
+        var result = new List<string>();
+
+        if (sources == null)
+        {
+            return result;
+        }
+
+        for (var index = 0; index < sources.Count; index++)
+        {
+            result.Add(PeriodContractMapper.ToFundsSourceSelectionLabel(sources[index]));
+        }
+
+        return result;
     }
 
     private static void SyncInputFieldText(InputField inputField, string value)

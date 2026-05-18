@@ -92,6 +92,11 @@ namespace Game.Core.Installers
                 .AsSingle()
                 .NonLazy();
 
+            Container.Bind<ISessionConfigRuntimeBuilder>()
+                .To<SessionConfigRuntimeBuilder>()
+                .AsSingle()
+                .NonLazy();
+
             Container.Bind<IApiClient>()
                 .To<UnityWebRequestApiClient>()
                 .AsSingle()
@@ -139,6 +144,11 @@ namespace Game.Core.Installers
 
             Container.Bind<IPeriodGameplayService>()
                 .To<PeriodGameplayService>()
+                .AsSingle()
+                .NonLazy();
+
+            Container.Bind<ISessionFlowCoordinator>()
+                .To<SessionFlowCoordinator>()
                 .AsSingle()
                 .NonLazy();
 

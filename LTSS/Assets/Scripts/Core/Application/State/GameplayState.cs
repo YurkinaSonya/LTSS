@@ -1,5 +1,6 @@
 using Game.Domain.GameFlow;
 using Game.Core.Application.Periods;
+using Game.Core.Application.Session;
 using Zenject;
 
 namespace Game.Core.Application.State
@@ -8,18 +9,18 @@ namespace Game.Core.Application.State
     {
         private readonly IApplicationStateStore _stateStore;
         private readonly IGameSessionService _gameSessionService;
-        private readonly LazyInject<IPeriodGameplayService> _periodGameplayService;
+        private readonly LazyInject<ISessionFlowCoordinator> _sessionFlowCoordinator;
 
         public AppStateId StateId => AppStateId.Gameplay;
 
         public GameplayState(
             IApplicationStateStore stateStore,
             IGameSessionService gameSessionService,
-            LazyInject<IPeriodGameplayService> periodGameplayService)
+            LazyInject<ISessionFlowCoordinator> sessionFlowCoordinator)
         {
             _stateStore = stateStore;
             _gameSessionService = gameSessionService;
-            _periodGameplayService = periodGameplayService;
+            _sessionFlowCoordinator = sessionFlowCoordinator;
         }
 
         public void Enter()
@@ -34,12 +35,12 @@ namespace Game.Core.Application.State
 
             _stateStore.SetState(state => state.With(
                 appStateId: StateId,
-                currentScreen: ScreenId.Gameplay,
-                isBusy: false,
-                statusMessage: string.Empty,
+                currentScreen: ScreenId.Loading,
+                isBusy: true,
+                statusMessage: "Подготовка сценария...",
                 lastError: string.Empty));
 
-            _periodGameplayService?.Value?.ActivateCurrentPeriod();
+            _sessionFlowCoordinator?.Value?.StartOrResume();
         }
 
         public void Exit()

@@ -9,6 +9,7 @@ namespace Game.Core.Application
         Results,
         Error,
         Login,
-        SessionReady
+        SessionReady,
+        FlowStep
     }
 }

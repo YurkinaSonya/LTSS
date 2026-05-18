@@ -55,6 +55,21 @@ namespace Game.Core.Application.Periods
             }
         }
 
+        public static string ToFundsSourceSelectionLabel(FundsSourceType value)
+        {
+            switch (value)
+            {
+                case FundsSourceType.CurrentIncome:
+                    return "из дохода";
+                case FundsSourceType.Cash:
+                    return "из наличных";
+                case FundsSourceType.Deposit:
+                    return "из депозита";
+                default:
+                    return "из источника";
+            }
+        }
+
         public static AssetOperationKind ToAssetOperationKind(string rawValue)
         {
             switch ((rawValue ?? string.Empty).Trim().ToLowerInvariant())

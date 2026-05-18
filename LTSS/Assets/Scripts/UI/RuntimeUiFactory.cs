@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -300,6 +301,174 @@ public static class RuntimeUiFactory
         return input;
     }
 
+    public static Dropdown CreateDropdown(Transform parent, float height = 52f)
+    {
+        const float dropdownItemHeight = 34f;
+
+        var dropdownRect = CreateRect("Dropdown", parent);
+
+        var layoutElement = dropdownRect.gameObject.AddComponent<LayoutElement>();
+        layoutElement.preferredHeight = height;
+
+        var image = dropdownRect.gameObject.AddComponent<Image>();
+        image.color = ElevatedSurfaceColor;
+
+        var outline = dropdownRect.gameObject.AddComponent<Outline>();
+        outline.effectColor = BorderColor;
+        outline.effectDistance = new Vector2(1f, -1f);
+
+        var dropdown = dropdownRect.gameObject.AddComponent<RuntimeDropdown>();
+        dropdown.targetGraphic = image;
+
+        var labelRect = CreateRect("Label", dropdownRect);
+        Stretch(labelRect, 16f, 36f, 0f, 0f);
+
+        var label = labelRect.gameObject.AddComponent<Text>();
+        label.font = DefaultFont;
+        label.fontSize = 17;
+        label.fontStyle = FontStyle.Normal;
+        label.alignment = TextAnchor.MiddleLeft;
+        label.color = TextPrimaryColor;
+        label.supportRichText = false;
+        label.horizontalOverflow = HorizontalWrapMode.Wrap;
+        label.verticalOverflow = VerticalWrapMode.Overflow;
+        label.raycastTarget = false;
+
+        var arrowRect = CreateRect("Arrow", dropdownRect);
+        arrowRect.anchorMin = new Vector2(1f, 0.5f);
+        arrowRect.anchorMax = new Vector2(1f, 0.5f);
+        arrowRect.pivot = new Vector2(1f, 0.5f);
+        arrowRect.sizeDelta = new Vector2(20f, 20f);
+        arrowRect.anchoredPosition = new Vector2(-12f, 0f);
+
+        var arrow = arrowRect.gameObject.AddComponent<Text>();
+        arrow.font = BoldFont;
+        arrow.fontSize = 14;
+        arrow.fontStyle = FontStyle.Normal;
+        arrow.alignment = TextAnchor.MiddleCenter;
+        arrow.color = TextSecondaryColor;
+        arrow.text = "\u25BE";
+        arrow.supportRichText = false;
+        arrow.raycastTarget = false;
+
+        var templateRect = CreateRect("Template", dropdownRect);
+        templateRect.anchorMin = new Vector2(0f, 0f);
+        templateRect.anchorMax = new Vector2(1f, 0f);
+        templateRect.pivot = new Vector2(0.5f, 1f);
+        templateRect.anchoredPosition = new Vector2(0f, -2f);
+        templateRect.sizeDelta = new Vector2(0f, dropdownItemHeight + 6f);
+        templateRect.gameObject.SetActive(false);
+
+        var templateImage = templateRect.gameObject.AddComponent<Image>();
+        templateImage.color = SurfaceColor;
+
+        var templateOutline = templateRect.gameObject.AddComponent<Outline>();
+        templateOutline.effectColor = BorderColor;
+        templateOutline.effectDistance = new Vector2(1f, -1f);
+
+        var viewportRect = CreateRect("Viewport", templateRect);
+        Stretch(viewportRect, 2f, 2f, 2f, 2f);
+
+        var contentRect = CreateRect("Content", viewportRect);
+        contentRect.anchorMin = new Vector2(0f, 1f);
+        contentRect.anchorMax = new Vector2(1f, 1f);
+        contentRect.pivot = new Vector2(0.5f, 1f);
+        contentRect.anchoredPosition = Vector2.zero;
+        contentRect.sizeDelta = new Vector2(0f, dropdownItemHeight);
+
+        var contentLayout = contentRect.gameObject.AddComponent<VerticalLayoutGroup>();
+        contentLayout.spacing = 0f;
+        contentLayout.childAlignment = TextAnchor.UpperLeft;
+        contentLayout.childControlWidth = true;
+        contentLayout.childControlHeight = true;
+        contentLayout.childForceExpandWidth = true;
+        contentLayout.childForceExpandHeight = false;
+
+        var itemRect = CreateRect("Item", contentRect);
+        var itemLayout = itemRect.gameObject.AddComponent<LayoutElement>();
+        itemLayout.preferredHeight = dropdownItemHeight;
+
+        var itemBackground = itemRect.gameObject.AddComponent<Image>();
+        itemBackground.color = ElevatedSurfaceColor;
+
+        var itemToggle = itemRect.gameObject.AddComponent<Toggle>();
+        itemToggle.targetGraphic = itemBackground;
+        itemToggle.graphic = null;
+
+        var itemColors = itemToggle.colors;
+        itemColors.normalColor = ElevatedSurfaceColor;
+        itemColors.highlightedColor = PrimarySoftColor;
+        itemColors.pressedColor = PrimarySoftColor;
+        itemColors.selectedColor = PrimarySoftColor;
+        itemColors.disabledColor = new Color(ElevatedSurfaceColor.r, ElevatedSurfaceColor.g, ElevatedSurfaceColor.b, 0.55f);
+        itemToggle.colors = itemColors;
+
+        var itemLabelRect = CreateRect("Item Label", itemRect);
+        Stretch(itemLabelRect, 16f, 16f, 0f, 0f);
+
+        var itemLabel = itemLabelRect.gameObject.AddComponent<Text>();
+        itemLabel.font = DefaultFont;
+        itemLabel.fontSize = 17;
+        itemLabel.fontStyle = FontStyle.Normal;
+        itemLabel.alignment = TextAnchor.MiddleLeft;
+        itemLabel.color = TextPrimaryColor;
+        itemLabel.supportRichText = false;
+        itemLabel.horizontalOverflow = HorizontalWrapMode.Wrap;
+        itemLabel.verticalOverflow = VerticalWrapMode.Overflow;
+        itemLabel.raycastTarget = false;
+
+        dropdown.BindRuntimeItemTemplate(itemToggle, itemLabel);
+        dropdown.ConfigureRuntimeLayout(templateRect, contentRect, dropdownItemHeight);
+
+        dropdown.template = templateRect;
+        dropdown.captionText = label;
+        dropdown.itemText = itemLabel;
+
+        var colors = dropdown.colors;
+        colors.normalColor = ElevatedSurfaceColor;
+        colors.highlightedColor = Color.Lerp(ElevatedSurfaceColor, Color.white, 0.05f);
+        colors.pressedColor = PrimarySoftColor;
+        colors.selectedColor = colors.highlightedColor;
+        colors.disabledColor = new Color(ElevatedSurfaceColor.r, ElevatedSurfaceColor.g, ElevatedSurfaceColor.b, 0.55f);
+        dropdown.colors = colors;
+
+        return dropdown;
+    }
+
+    public static void SetDropdownOptions(Dropdown dropdown, IReadOnlyList<string> options, int selectedIndex)
+    {
+        if (dropdown == null)
+        {
+            return;
+        }
+
+        dropdown.ClearOptions();
+
+        var optionData = new List<Dropdown.OptionData>();
+
+        if (options != null)
+        {
+            for (var index = 0; index < options.Count; index++)
+            {
+                optionData.Add(new Dropdown.OptionData(options[index] ?? string.Empty));
+            }
+        }
+
+        if (optionData.Count == 0)
+        {
+            optionData.Add(new Dropdown.OptionData(string.Empty));
+        }
+
+        dropdown.AddOptions(optionData);
+        dropdown.SetValueWithoutNotify(Mathf.Clamp(selectedIndex, 0, optionData.Count - 1));
+        dropdown.RefreshShownValue();
+
+        if (dropdown is RuntimeDropdown runtimeDropdown)
+        {
+            runtimeDropdown.RefreshTemplateLayout(optionData.Count);
+        }
+    }
+
     public static void AddSpacer(Transform parent, float height)
     {
         var spacer = CreateRect("Spacer", parent);
@@ -509,3 +678,4 @@ public static class RuntimeUiFactory
         }
     }
 }
+ 
