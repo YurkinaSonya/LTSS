@@ -290,17 +290,22 @@ namespace Game.Core.Application.Periods
                 return 0d;
             }
 
+            double coefficient;
+
             if (amount <= minimumAmount + ComparisonTolerance)
             {
-                return 1d;
+                coefficient = 1d;
             }
-
-            if (amount >= upperThreshold - ComparisonTolerance)
+            else if (amount >= upperThreshold - ComparisonTolerance)
             {
-                return 1.3d;
+                coefficient = 1.3d;
+            }
+            else
+            {
+                coefficient = Lerp(minimumAmount, upperThreshold, amount, 1d, 1.3d);
             }
 
-            return Lerp(minimumAmount, upperThreshold, amount, 1d, 1.3d);
+            return amount * coefficient;
         }
 
         private static double CalculateHousingContribution(
@@ -314,7 +319,7 @@ namespace Game.Core.Application.Periods
                 return 0d;
             }
 
-            return 1d;
+            return amount;
         }
 
         private static double CalculateLeisureContribution(
@@ -329,22 +334,26 @@ namespace Game.Core.Application.Periods
                 return LeisureZeroSpendPenalty;
             }
 
+            double coefficient;
+
             if (amount < firstThreshold - ComparisonTolerance)
             {
-                return Lerp(0d, firstThreshold, amount, 0d, 1d);
+                coefficient = Lerp(0d, firstThreshold, amount, 0d, 1d);
             }
-
-            if (amount <= firstThreshold + ComparisonTolerance)
+            else if (amount <= firstThreshold + ComparisonTolerance)
             {
-                return 1d;
+                coefficient = 1d;
             }
-
-            if (amount < upperThreshold - ComparisonTolerance)
+            else if (amount < upperThreshold - ComparisonTolerance)
             {
-                return Lerp(firstThreshold, upperThreshold, amount, 1.1d, 2d);
+                coefficient = Lerp(firstThreshold, upperThreshold, amount, 1.1d, 2d);
+            }
+            else
+            {
+                coefficient = 2d;
             }
 
-            return 2d;
+            return amount * coefficient;
         }
 
         private static double CalculateHolidayContribution(
@@ -373,11 +382,13 @@ namespace Game.Core.Application.Periods
             switch (expenseDefinition.Id)
             {
                 case "goods_services":
-                    return 1.3d;
+                    return 0d;
                 case "housing_rent":
-                    return 1d;
+                    return expenseDefinition.MinimumAmount > 0d
+                        ? expenseDefinition.MinimumAmount
+                        : ScaleThreshold(definition, HousingRentBase);
                 case "leisure":
-                    return 2d;
+                    return 0d;
                 case "holiday":
                     return HolidayBonusUje;
                 default:

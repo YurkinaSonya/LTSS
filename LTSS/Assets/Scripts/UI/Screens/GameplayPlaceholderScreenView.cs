@@ -309,7 +309,9 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
 
                 if (showRequiredBadge && widgets.RequiredBadgeLabel != null)
                 {
-                    widgets.RequiredBadgeLabel.text = $"мин. {FormatMoney(expenseDefinition.MinimumAmount)}";
+                    widgets.RequiredBadgeLabel.text = string.Equals(expenseDefinition.Id, "housing_rent", StringComparison.Ordinal)
+                        ? FormatMoney(expenseDefinition.MinimumAmount)
+                        : $"мин. {FormatMoney(expenseDefinition.MinimumAmount)}";
                 }
             }
 

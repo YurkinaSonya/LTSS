@@ -103,6 +103,19 @@ namespace Game.Core.Application.Periods
                 targetPeriodNumber = _pendingCarryOverTargetPeriodNumber;
             }
 
+            if (previousState.HasDefinition
+                && string.Equals(previousState.RunId, clientRuntime.AuthenticatedRun.RunId, StringComparison.Ordinal)
+                && previousState.PeriodNumber == targetPeriodNumber
+                && (previousState.FlowState == PeriodFlowState.PeriodIntro
+                    || previousState.FlowState == PeriodFlowState.PeriodActive
+                    || previousState.FlowState == PeriodFlowState.PeriodValidation))
+            {
+                Publish(previousState.FlowState == PeriodFlowState.None
+                    ? previousState.With(flowState: PeriodFlowState.PeriodActive)
+                    : previousState);
+                return;
+            }
+
             Publish(new PeriodRuntimeState(
                 clientRuntime.AuthenticatedRun.RunId,
                 targetPeriodNumber,
@@ -117,16 +130,6 @@ namespace Game.Core.Application.Periods
                 string.Empty,
                 previousState.SubmittedAtUtc,
                 previousState.HasPendingLocalChanges));
-
-            if (previousState.HasDefinition
-                && string.Equals(previousState.RunId, clientRuntime.AuthenticatedRun.RunId, StringComparison.Ordinal)
-                && previousState.PeriodNumber == targetPeriodNumber)
-            {
-                Publish(previousState.FlowState == PeriodFlowState.None
-                    ? previousState.With(flowState: PeriodFlowState.PeriodActive)
-                    : previousState);
-                return;
-            }
 
             if (_runtimeFactory.TryRestore(clientRuntime, LoadPersistedPeriodSnapshot(), out var restoredState, out _))
             {
@@ -653,10 +656,16 @@ namespace Game.Core.Application.Periods
 
                         if (hasNextPeriod)
                         {
-                            if (_current.FlowState == PeriodFlowState.PeriodClosed
-                                && _current.PeriodNumber == submittedPeriodNumber)
+                            var nextPeriodActivated = _current.HasDefinition
+                                && _current.PeriodNumber == nextPeriodNumber
+                                && (_current.FlowState == PeriodFlowState.PeriodIntro
+                                    || _current.FlowState == PeriodFlowState.PeriodActive
+                                    || _current.FlowState == PeriodFlowState.PeriodValidation);
+
+                            _persistenceService?.ClearPeriodSnapshot();
+
+                            if (!nextPeriodActivated)
                             {
-                                _persistenceService?.ClearPeriodSnapshot();
                                 ActivateCurrentPeriod();
                             }
 
