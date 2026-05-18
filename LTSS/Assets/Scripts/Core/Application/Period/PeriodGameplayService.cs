@@ -1846,6 +1846,12 @@ namespace Game.Core.Application.Periods
                 return state;
             }
 
+            if (IsTrainingResetPeriod(state))
+            {
+                ClearPendingCarryOver();
+                return state;
+            }
+
             if (TryConsumePendingCarryOver(state, out var pendingState))
             {
                 return pendingState;
@@ -1862,6 +1868,41 @@ namespace Game.Core.Application.Periods
             }
 
             return state;
+        }
+
+        private bool IsTrainingResetPeriod(PeriodRuntimeState state)
+        {
+            if (state == null
+                || !state.HasDefinition
+                || state.PeriodNumber <= 1
+                || state.Definition.Meta == null
+                || !string.Equals(state.Definition.Meta.Phase, "main", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            var clientRuntime = _sessionCoordinator != null
+                ? _sessionCoordinator.CurrentRuntime
+                : ClientRuntimeState.Empty;
+
+            if (clientRuntime == null
+                || !clientRuntime.HasSession
+                || clientRuntime.Bootstrap == null
+                || clientRuntime.Bootstrap.Session == null
+                || clientRuntime.Bootstrap.Session.SessionConfig == null
+                || clientRuntime.Bootstrap.Session.SessionConfig.Runtime == null)
+            {
+                return false;
+            }
+
+            var sessionConfigRuntime = clientRuntime.Bootstrap.Session.SessionConfig.Runtime;
+
+            if (!sessionConfigRuntime.TryGetPeriod(state.PeriodNumber - 1, out var previousPeriod) || previousPeriod == null)
+            {
+                return false;
+            }
+
+            return string.Equals(previousPeriod.Phase, "training", StringComparison.OrdinalIgnoreCase);
         }
 
         private bool TryConsumePendingCarryOver(PeriodRuntimeState state, out PeriodRuntimeState nextState)

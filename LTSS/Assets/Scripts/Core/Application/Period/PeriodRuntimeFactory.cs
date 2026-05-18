@@ -167,6 +167,8 @@ namespace Game.Core.Application.Periods
             var configuredPeriod = sessionConfigRuntime.TryGetPeriod(periodNumber, out var resolvedPeriodRuntime)
                 ? resolvedPeriodRuntime
                 : SessionPeriodRuntime.Empty;
+            var firstMainPeriodNumber = ResolveFirstMainPeriodNumber(sessionConfigRuntime);
+            var isFirstMainPeriod = IsFirstMainPeriod(firstMainPeriodNumber, periodNumber, configuredPeriod);
             var sessionDocument = clientRuntime.Bootstrap.Session.SessionConfig.Document;
             var assignedDocument = clientRuntime.Bootstrap.Participant.AssignedConfig.Document;
             var sessionRoot = sessionConfigRuntime.RootNode != null && sessionConfigRuntime.RootNode.Kind != JsonValueKind.Null
@@ -193,7 +195,12 @@ namespace Game.Core.Application.Periods
 
             var periodStatistics = ResolvePeriodStatistics(clientRuntime, periodNumber);
             var hasIncomeLossForCurrentPeriod = HasIncomeLossForPeriod(clientRuntime, sessionConfigRuntime, periodNumber);
-            var economyContext = BuildEconomyContext(clientRuntime, periodStatistics, periodNumber, hasIncomeLossForCurrentPeriod);
+            var economyContext = BuildEconomyContext(
+                clientRuntime,
+                periodStatistics,
+                periodNumber,
+                hasIncomeLossForCurrentPeriod,
+                ResolveEconomicStartPeriodNumber(firstMainPeriodNumber, periodNumber));
             var historicalLabel = !string.IsNullOrWhiteSpace(configuredPeriod.HistoricalYear)
                 ? configuredPeriod.HistoricalYear
                 : !string.IsNullOrWhiteSpace(economyContext.HistoricalYear)
@@ -228,16 +235,27 @@ namespace Game.Core.Application.Periods
                 "minimumEnergy") ?? 0d;
 
             var validationSettings = BuildValidationSettings(periodNode, sessionRoot, minimumUje);
-            var residenceOwnership = ResolveResidenceOwnership(runId, periodNumber);
-            var pensionReserve = ResolvePensionReserve(runId, periodNumber, configuredPeriod, economyContext);
-            var pdsAccount = ResolvePdsAccount(runId, periodNumber);
+            var residenceOwnership = isFirstMainPeriod
+                ? null
+                : ResolveResidenceOwnership(runId, periodNumber);
+            var pensionReserve = ResolvePensionReserve(
+                runId,
+                periodNumber,
+                configuredPeriod,
+                economyContext,
+                isFirstMainPeriod);
+            var pdsAccount = isFirstMainPeriod
+                ? null
+                : ResolvePdsAccount(runId, periodNumber);
             var baseExpenseDefinitions = BuildExpenseDefinitions(
                 periodNode,
                 sessionRoot,
                 economyContext,
                 residenceOwnership != null);
             var assetDefinitions = BuildAssetDefinitions(residenceOwnership != null, pdsAccount != null);
-            var activeCredits = ResolveConsumerCredits(runId, periodNumber);
+            var activeCredits = isFirstMainPeriod
+                ? Array.Empty<ConsumerCreditContractRuntime>()
+                : ResolveConsumerCredits(runId, periodNumber);
             var initialCash = ResolveInitialAssetBalance(assignedRoot, periodNode, sessionRoot, "cash") ?? 0d;
             var initialDeposit = ResolveInitialAssetBalance(assignedRoot, periodNode, sessionRoot, "deposit") ?? 0d;
             var expenseDefinitions = AppendConsumerCreditExpenseDefinitions(
@@ -472,9 +490,17 @@ namespace Game.Core.Application.Periods
             string runId,
             int periodNumber,
             SessionPeriodRuntime configuredPeriod,
-            PeriodEconomyContext economyContext)
+            PeriodEconomyContext economyContext,
+            bool resetFromTraining)
         {
             var pensionFeatureActive = configuredPeriod != null && configuredPeriod.HasFeature("pension_info");
+
+            if (resetFromTraining)
+            {
+                return pensionFeatureActive
+                    ? AdvancePensionReserve(null, economyContext, true)
+                    : null;
+            }
 
             if (_persistenceService == null
                 || _serializer == null
@@ -1261,7 +1287,8 @@ namespace Game.Core.Application.Periods
             ClientRuntimeState clientRuntime,
             PeriodStatisticsRuntime periodStatistics,
             int periodNumber,
-            bool hasPermanentIncomeLoss)
+            bool hasPermanentIncomeLoss,
+            int economicStartPeriodNumber)
         {
             var baseIncomeEcu = clientRuntime != null
                                 && clientRuntime.HasSession
@@ -1288,7 +1315,9 @@ namespace Game.Core.Application.Periods
 
             if (periodNumber > 1)
             {
-                for (var index = 2; index <= periodNumber; index++)
+                var startIndex = Math.Max(2, economicStartPeriodNumber + 1);
+
+                for (var index = startIndex; index <= periodNumber; index++)
                 {
                     var indexedStatistics = ResolvePeriodStatistics(clientRuntime, index);
                     var growthMultiplier = indexedStatistics != null
@@ -1364,6 +1393,63 @@ namespace Game.Core.Application.Periods
                 && (snapshot.incomeLossPeriodNumber > 0
                     ? snapshot.incomeLossPeriodNumber == periodNumber
                     : snapshot.hasPermanentIncomeLoss && snapshot.activePeriodNumber == periodNumber);
+        }
+
+        private static int ResolveFirstMainPeriodNumber(SessionConfigRuntime sessionConfigRuntime)
+        {
+            if (sessionConfigRuntime == null || sessionConfigRuntime.Periods == null || sessionConfigRuntime.Periods.Count == 0)
+            {
+                return 0;
+            }
+
+            var previousWasTraining = false;
+
+            for (var index = 0; index < sessionConfigRuntime.Periods.Count; index++)
+            {
+                var period = sessionConfigRuntime.Periods[index];
+
+                if (period == null)
+                {
+                    continue;
+                }
+
+                var isTraining = IsTrainingPhase(period.Phase);
+                var isMain = IsMainPhase(period.Phase);
+
+                if (isMain && previousWasTraining)
+                {
+                    return index + 1;
+                }
+
+                previousWasTraining = isTraining;
+            }
+
+            return 0;
+        }
+
+        private static bool IsFirstMainPeriod(int firstMainPeriodNumber, int periodNumber, SessionPeriodRuntime configuredPeriod)
+        {
+            return firstMainPeriodNumber > 0
+                   && periodNumber == firstMainPeriodNumber
+                   && configuredPeriod != null
+                   && IsMainPhase(configuredPeriod.Phase);
+        }
+
+        private static int ResolveEconomicStartPeriodNumber(int firstMainPeriodNumber, int periodNumber)
+        {
+            return firstMainPeriodNumber > 0 && periodNumber >= firstMainPeriodNumber
+                ? firstMainPeriodNumber
+                : 1;
+        }
+
+        private static bool IsTrainingPhase(string phase)
+        {
+            return string.Equals(phase, "training", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsMainPhase(string phase)
+        {
+            return string.Equals(phase, "main", StringComparison.OrdinalIgnoreCase);
         }
 
         private static double NormalizePercentageToRate(double? rawPercent)
