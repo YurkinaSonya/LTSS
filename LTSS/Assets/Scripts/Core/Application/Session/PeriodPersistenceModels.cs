@@ -25,6 +25,12 @@ namespace Game.Core.Application.Session
         public double initialCashBalance;
         public double initialDepositBalance;
         public double accumulatedUje;
+        public bool hasPersistedCarryOverBalances;
+        public bool hasPersistedCarryOverAccumulatedUje;
+        public int carryOverTargetPeriodNumber;
+        public double carryOverCashBalance;
+        public double carryOverDepositBalance;
+        public double carryOverAccumulatedUje;
         public PeriodExpenseStateSnapshotDto[] expenses;
         public PeriodAssetOperationSnapshotDto[] assetOperations;
         public bool isCheckpointSubmitted;

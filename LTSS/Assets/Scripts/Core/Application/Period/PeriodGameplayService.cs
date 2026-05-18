@@ -133,7 +133,7 @@ namespace Game.Core.Application.Periods
 
             if (_runtimeFactory.TryRestore(clientRuntime, LoadPersistedPeriodSnapshot(), out var restoredState, out _))
             {
-                restoredState = TryApplyPendingCarryOver(restoredState);
+                restoredState = TryApplyCarryOver(restoredState);
                 Publish(restoredState.With(
                     flowState: restoredState.IsCheckpointSubmitted
                         ? PeriodFlowState.PeriodClosed
@@ -164,7 +164,7 @@ namespace Game.Core.Application.Periods
             }
 
             createdState = createdState.With(flowState: PeriodFlowState.PeriodActive);
-            createdState = TryApplyPendingCarryOver(createdState);
+            createdState = TryApplyCarryOver(createdState);
             Publish(createdState);
             PersistCurrentState();
 
@@ -796,6 +796,12 @@ namespace Game.Core.Application.Periods
                 initialCashBalance = state.Definition.InitialCashBalance,
                 initialDepositBalance = state.Definition.InitialDepositBalance,
                 accumulatedUje = state.Definition.CalculationSettings.BaseUje,
+                hasPersistedCarryOverBalances = state.Summary != null,
+                hasPersistedCarryOverAccumulatedUje = state.Summary != null,
+                carryOverTargetPeriodNumber = state.PeriodNumber + 1,
+                carryOverCashBalance = state.Summary != null ? Math.Max(0d, state.Summary.CashBalance) : 0d,
+                carryOverDepositBalance = state.Summary != null ? Math.Max(0d, state.Summary.DepositBalance) : 0d,
+                carryOverAccumulatedUje = state.Summary != null ? state.Summary.Uje : 0d,
                 expenses = BuildExpenseSnapshots(state.Expenses),
                 assetOperations = BuildOperationSnapshots(state.AssetOperations),
                 isCheckpointSubmitted = state.IsCheckpointSubmitted,
@@ -1244,18 +1250,106 @@ namespace Game.Core.Application.Periods
             _pendingCarryOverAccumulatedUje = 0d;
         }
 
-        private PeriodRuntimeState TryApplyPendingCarryOver(PeriodRuntimeState state)
+        private PeriodRuntimeState TryApplyCarryOver(PeriodRuntimeState state)
         {
-            if (state == null
-                || !state.HasDefinition
-                || string.IsNullOrWhiteSpace(_pendingCarryOverRunId)
-                || _pendingCarryOverTargetPeriodNumber <= 0
-                || !string.Equals(state.RunId, _pendingCarryOverRunId, StringComparison.Ordinal)
-                || state.PeriodNumber != _pendingCarryOverTargetPeriodNumber)
+            if (state == null || !state.HasDefinition)
             {
                 return state;
             }
 
+            if (TryConsumePendingCarryOver(state, out var pendingState))
+            {
+                return pendingState;
+            }
+
+            if (TryLoadCarryOverFromSnapshot(
+                    state.RunId,
+                    state.PeriodNumber,
+                    out var cashBalance,
+                    out var depositBalance,
+                    out var accumulatedUje))
+            {
+                return ApplyCarryOver(state, cashBalance, depositBalance, accumulatedUje);
+            }
+
+            return state;
+        }
+
+        private bool TryConsumePendingCarryOver(PeriodRuntimeState state, out PeriodRuntimeState nextState)
+        {
+            nextState = state;
+
+            if (string.IsNullOrWhiteSpace(_pendingCarryOverRunId)
+                || _pendingCarryOverTargetPeriodNumber <= 0
+                || !string.Equals(state.RunId, _pendingCarryOverRunId, StringComparison.Ordinal)
+                || state.PeriodNumber != _pendingCarryOverTargetPeriodNumber)
+            {
+                return false;
+            }
+
+            nextState = ApplyCarryOver(
+                state,
+                _pendingCarryOverCashBalance,
+                _pendingCarryOverDepositBalance,
+                _pendingCarryOverAccumulatedUje);
+            ClearPendingCarryOver();
+            return true;
+        }
+
+        private bool TryLoadCarryOverFromSnapshot(
+            string runId,
+            int targetPeriodNumber,
+            out double cashBalance,
+            out double depositBalance,
+            out double accumulatedUje)
+        {
+            cashBalance = 0d;
+            depositBalance = 0d;
+            accumulatedUje = 0d;
+
+            if (_persistenceService == null
+                || _serializer == null
+                || string.IsNullOrWhiteSpace(runId)
+                || targetPeriodNumber <= 1
+                || !_persistenceService.TryLoadPeriodSnapshot(out var snapshot)
+                || snapshot == null
+                || !snapshot.isCheckpointSubmitted
+                || !string.Equals(snapshot.runId, runId, StringComparison.Ordinal)
+                || snapshot.periodNumber != targetPeriodNumber - 1
+                || string.IsNullOrWhiteSpace(snapshot.rawPeriodStateJson))
+            {
+                return false;
+            }
+
+            if (!_serializer.TryDeserialize(
+                    snapshot.rawPeriodStateJson,
+                    out PeriodRuntimeSnapshotDto dto,
+                    out var deserializeError))
+            {
+                _logger.Warning($"Failed to deserialize persisted carry-over snapshot. {deserializeError}");
+                return false;
+            }
+
+            if (dto == null
+                || dto.carryOverTargetPeriodNumber > 0 && dto.carryOverTargetPeriodNumber != targetPeriodNumber
+                || !dto.hasPersistedCarryOverBalances
+                || !dto.hasPersistedCarryOverAccumulatedUje)
+            {
+                return false;
+            }
+
+            cashBalance = Math.Max(0d, dto.carryOverCashBalance);
+            depositBalance = Math.Max(0d, dto.carryOverDepositBalance);
+            accumulatedUje = dto.carryOverAccumulatedUje;
+            return true;
+        }
+
+        private PeriodRuntimeState ApplyCarryOver(
+            PeriodRuntimeState state,
+            double cashBalance,
+            double depositBalance,
+            double accumulatedUje)
+        {
             var currentDefinition = state.Definition;
             var nextDefinition = new PeriodRuntimeDefinition(
                 currentDefinition.Meta,
@@ -1266,17 +1360,18 @@ namespace Game.Core.Application.Periods
                 new PeriodCalculationSettings(
                     currentDefinition.CalculationSettings.CurrentIncomeEcu,
                     currentDefinition.CalculationSettings.BaseIncomeEcu,
-                    _pendingCarryOverAccumulatedUje,
+                    accumulatedUje,
                     currentDefinition.CalculationSettings.MaximumUje),
                 currentDefinition.EconomyContext,
-                _pendingCarryOverCashBalance,
-                _pendingCarryOverDepositBalance,
+                Math.Max(0d, cashBalance),
+                Math.Max(0d, depositBalance),
                 currentDefinition.SourceSummary);
             var nextSummary = _calculationEngine.Recalculate(
                 nextDefinition,
                 state.Expenses,
                 state.AssetOperations);
-            var nextState = new PeriodRuntimeState(
+
+            return new PeriodRuntimeState(
                 state.RunId,
                 state.PeriodNumber,
                 state.FlowState,
@@ -1290,9 +1385,6 @@ namespace Game.Core.Application.Periods
                 state.LastError,
                 state.SubmittedAtUtc,
                 state.HasPendingLocalChanges);
-
-            ClearPendingCarryOver();
-            return nextState;
         }
     }
 }

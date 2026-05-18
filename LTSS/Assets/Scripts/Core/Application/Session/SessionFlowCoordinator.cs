@@ -665,15 +665,162 @@ namespace Game.Core.Application.Session
                     label = $"Вопрос {index + 1}";
                 }
 
+                var optionsNode = questionNode.FindFirstProperty("options", "choices", "answers", "variants");
+                var questionType = ResolveQuestionType(questionNode, optionsNode);
+                var options = BuildQuestionOptions(optionsNode);
+
                 result.Add(new SessionFlowQuestionRuntime(
                     id,
                     label,
                     ReadString(questionNode, "placeholder", "hint"),
                     ReadString(questionNode, "description", "helpText"),
-                    ReadBoolean(questionNode, "required", "isRequired", "mandatory") ?? true));
+                    ReadBoolean(questionNode, "required", "isRequired", "mandatory") ?? true,
+                    questionType,
+                    options));
             }
 
             return result;
+        }
+
+        private static SessionFlowQuestionType ResolveQuestionType(JsonValue questionNode, JsonValue optionsNode)
+        {
+            var rawType = ReadString(questionNode, "type", "questionType", "kind");
+            var rawDisplay = ReadString(questionNode, "display", "layout", "renderer", "presentation");
+            var allowMultiple = ReadBoolean(questionNode, "allowMultiple", "multiple", "isMultiple", "multiSelect") == true;
+
+            if (allowMultiple
+                || string.Equals(rawType, "multiple", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(rawType, "multi", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(rawType, "multiselect", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(rawType, "checkbox", StringComparison.OrdinalIgnoreCase))
+            {
+                return SessionFlowQuestionType.MultipleChoice;
+            }
+
+            if (string.Equals(rawType, "scale", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(rawDisplay, "scale", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(rawDisplay, "rating", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(rawDisplay, "horizontal_scale", StringComparison.OrdinalIgnoreCase))
+            {
+                return SessionFlowQuestionType.Scale;
+            }
+
+            if (string.Equals(rawType, "single", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(rawType, "choice", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(rawType, "radio", StringComparison.OrdinalIgnoreCase))
+            {
+                return SessionFlowQuestionType.SingleChoice;
+            }
+
+            if (string.Equals(rawType, "text", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(rawType, "string", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(rawType, "open", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(rawType, "textarea", StringComparison.OrdinalIgnoreCase))
+            {
+                return SessionFlowQuestionType.Text;
+            }
+
+            return optionsNode != null && optionsNode.Kind == JsonValueKind.Array && optionsNode.Count > 0
+                ? SessionFlowQuestionType.SingleChoice
+                : SessionFlowQuestionType.Text;
+        }
+
+        private static IReadOnlyList<SessionFlowQuestionOptionRuntime> BuildQuestionOptions(JsonValue optionsNode)
+        {
+            if (optionsNode == null || optionsNode.Kind != JsonValueKind.Array || optionsNode.Count == 0)
+            {
+                return Array.Empty<SessionFlowQuestionOptionRuntime>();
+            }
+
+            var result = new List<SessionFlowQuestionOptionRuntime>(optionsNode.Count);
+
+            for (var index = 0; index < optionsNode.ArrayValue.Count; index++)
+            {
+                var optionNode = optionsNode.ArrayValue[index];
+
+                if (optionNode == null || optionNode.Kind == JsonValueKind.Null)
+                {
+                    continue;
+                }
+
+                if (optionNode.Kind == JsonValueKind.String)
+                {
+                    var rawLabel = optionNode.GetStringOrDefault().Trim();
+
+                    if (string.IsNullOrWhiteSpace(rawLabel))
+                    {
+                        continue;
+                    }
+
+                    var isOther = IsOtherOption(optionNode, rawLabel, string.Empty);
+                    var label = isOther ? "Другое" : rawLabel;
+                    var optionId = isOther ? "other" : rawLabel;
+                    result.Add(new SessionFlowQuestionOptionRuntime(optionId, label, isOther));
+                    continue;
+                }
+
+                if (optionNode.Kind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                var optionIdValue = ReadString(optionNode, "id", "code", "key", "value");
+                var labelValue = ReadString(optionNode, "label", "title", "text", "name", "value");
+                var isOtherObject = IsOtherOption(optionNode, labelValue, optionIdValue);
+
+                if (string.IsNullOrWhiteSpace(labelValue))
+                {
+                    labelValue = isOtherObject
+                        ? "Другое"
+                        : $"Вариант {index + 1}";
+                }
+
+                if (string.IsNullOrWhiteSpace(optionIdValue))
+                {
+                    optionIdValue = isOtherObject
+                        ? "other"
+                        : labelValue;
+                }
+
+                result.Add(new SessionFlowQuestionOptionRuntime(
+                    optionIdValue,
+                    labelValue,
+                    isOtherObject));
+            }
+
+            return result;
+        }
+
+        private static bool IsOtherOption(JsonValue optionNode, string labelValue, string optionIdValue)
+        {
+            if (optionNode != null && optionNode.Kind == JsonValueKind.Object)
+            {
+                if (ReadBoolean(optionNode, "isOther", "other", "allowText", "freeText") == true)
+                {
+                    return true;
+                }
+
+                var rawType = ReadString(optionNode, "type", "kind");
+
+                if (string.Equals(rawType, "other", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return IsOtherToken(optionIdValue) || IsOtherToken(labelValue);
+        }
+
+        private static bool IsOtherToken(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            var normalized = value.Trim();
+            return string.Equals(normalized, "__other__", StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(normalized, "other", StringComparison.OrdinalIgnoreCase);
         }
 
         private static string ResolveTemplateBody(JsonValue root)

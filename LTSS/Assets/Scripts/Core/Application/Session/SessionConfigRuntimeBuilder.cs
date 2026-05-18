@@ -219,7 +219,13 @@ namespace Game.Core.Application.Session
                 }
 
                 result.Add(new SharedSurveyRefRuntime(
-                    string.IsNullOrWhiteSpace(id) ? survey.Id : id,
+                    string.IsNullOrWhiteSpace(id)
+                        ? !string.IsNullOrWhiteSpace(survey.Id)
+                            ? survey.Id
+                            : !string.IsNullOrWhiteSpace(survey.SharedRefId)
+                                ? survey.SharedRefId
+                                : survey.TemplateCode
+                        : id,
                     survey));
             }
 
@@ -442,7 +448,7 @@ namespace Game.Core.Application.Session
                 return new SurveyRefRuntime(
                     value,
                     value,
-                    string.Empty,
+                    value,
                     null,
                     string.Empty,
                     string.Empty,
@@ -455,10 +461,18 @@ namespace Game.Core.Application.Session
             }
 
             var templateId = ReadInt(node, "templateId", "id");
+            var directRef = ReadString(node, "ref", "surveyRefId");
+            var templateCode = ReadString(node, "templateCode", "surveyCode", "code");
+
+            if (string.IsNullOrWhiteSpace(templateCode))
+            {
+                templateCode = directRef;
+            }
+
             return new SurveyRefRuntime(
                 ReadString(node, "id", "refId", "code", "key"),
                 ReadString(node, "sharedRefId", "sharedSurveyRefId", "ref", "surveyRefId"),
-                ReadString(node, "templateCode", "surveyCode", "code"),
+                templateCode,
                 templateId > 0 ? (int?)templateId : null,
                 ReadString(node, "purpose", "type"),
                 ReadString(node, "title", "label", "name"),

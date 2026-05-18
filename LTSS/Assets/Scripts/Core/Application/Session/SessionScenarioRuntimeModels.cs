@@ -849,6 +849,31 @@ namespace Game.Core.Application.Session
         }
     }
 
+    public enum SessionFlowQuestionType
+    {
+        Text,
+        SingleChoice,
+        MultipleChoice,
+        Scale
+    }
+
+    public sealed class SessionFlowQuestionOptionRuntime
+    {
+        public string Id { get; }
+        public string Label { get; }
+        public bool IsOther { get; }
+
+        public SessionFlowQuestionOptionRuntime(
+            string id,
+            string label,
+            bool isOther)
+        {
+            Id = id ?? string.Empty;
+            Label = label ?? string.Empty;
+            IsOther = isOther;
+        }
+    }
+
     public sealed class SessionFlowQuestionRuntime
     {
         public string Id { get; }
@@ -856,19 +881,27 @@ namespace Game.Core.Application.Session
         public string Placeholder { get; }
         public string Description { get; }
         public bool IsRequired { get; }
+        public SessionFlowQuestionType Type { get; }
+        public IReadOnlyList<SessionFlowQuestionOptionRuntime> Options { get; }
 
         public SessionFlowQuestionRuntime(
             string id,
             string label,
             string placeholder,
             string description,
-            bool isRequired)
+            bool isRequired,
+            SessionFlowQuestionType type,
+            IReadOnlyList<SessionFlowQuestionOptionRuntime> options)
         {
             Id = id ?? string.Empty;
             Label = label ?? string.Empty;
             Placeholder = placeholder ?? string.Empty;
             Description = description ?? string.Empty;
             IsRequired = isRequired;
+            Type = type;
+            Options = options != null
+                ? new List<SessionFlowQuestionOptionRuntime>(options)
+                : Array.Empty<SessionFlowQuestionOptionRuntime>();
         }
     }
 
