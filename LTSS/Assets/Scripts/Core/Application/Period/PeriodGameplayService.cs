@@ -236,6 +236,25 @@ namespace Game.Core.Application.Periods
                 true);
         }
 
+        public void ApplyRequiredExpenseAmount(string expenseId)
+        {
+            if (!_current.HasDefinition || !CanEditCurrentState() || string.IsNullOrWhiteSpace(expenseId))
+            {
+                return;
+            }
+
+            var definition = FindExpenseDefinition(expenseId);
+
+            if (!IsFixedAmountExpense(definition))
+            {
+                return;
+            }
+
+            SetExpenseAmount(
+                expenseId,
+                definition.MinimumAmount.ToString("0.##", CultureInfo.InvariantCulture));
+        }
+
         public void CycleExpenseSource(string expenseId)
         {
             if (!_current.HasDefinition || !CanEditCurrentState() || string.IsNullOrWhiteSpace(expenseId))
@@ -389,6 +408,19 @@ namespace Game.Core.Application.Periods
                 lastError: string.Empty));
         }
 
+        public void OpenConsumerCreditDialog()
+        {
+            if (!_current.HasDefinition
+                || !CanEditCurrentState()
+                || !IsConsumerCreditAvailable(_current.Definition))
+            {
+                return;
+            }
+
+            _popupNavigation?.Push(Enums.PopupType.ConsumerCredit, "consumer_credit_open");
+            Publish(_current.With(statusMessage: string.Empty, lastError: string.Empty));
+        }
+
         public void CycleAssetDialogSource()
         {
             if (_current == null || !CanEditCurrentState() || !_current.AssetDialog.IsOpen)
@@ -539,6 +571,78 @@ namespace Game.Core.Application.Periods
 
             Publish(_current.With(assetDialog: AssetOperationDialogState.Closed, statusMessage: string.Empty));
             _popupNavigation?.Pop("asset_operation_close");
+        }
+
+        public bool TrySubmitConsumerCredit(string rawAmount, out string errorMessage)
+        {
+            errorMessage = string.Empty;
+
+            if (!_current.HasDefinition || !CanEditCurrentState())
+            {
+                errorMessage = "Период недоступен для оформления кредита.";
+                return false;
+            }
+
+            if (!IsConsumerCreditAvailable(_current.Definition))
+            {
+                errorMessage = "Потребительский кредит пока недоступен.";
+                return false;
+            }
+
+            if (!NumericInputParser.TryParseNonNegativeAmount(rawAmount, out var principal) || principal <= 0d)
+            {
+                errorMessage = "Введите корректную сумму кредита.";
+                return false;
+            }
+
+            var definition = _current.Definition;
+            var ratePercent = definition.EconomyContext != null
+                ? definition.EconomyContext.CreditRate
+                : null;
+            var periodicPayment = ConsumerCreditMath.CalculateAnnuityPayment(principal, ratePercent);
+            var creditPotential = ConsumerCreditMath.CalculateCreditPotential(definition);
+
+            if (periodicPayment > creditPotential + 0.01d)
+            {
+                errorMessage = $"Платёж по кредиту превышает кредитный потенциал ({EcuFormatter.FormatAmount(creditPotential)}).";
+                return false;
+            }
+
+            var nextCredits = new List<ConsumerCreditContractRuntime>(definition.ConsumerCredits ?? Array.Empty<ConsumerCreditContractRuntime>())
+            {
+                new ConsumerCreditContractRuntime(
+                    Guid.NewGuid().ToString("N"),
+                    _current.PeriodNumber,
+                    principal,
+                    principal,
+                    periodicPayment,
+                    ratePercent ?? 0d,
+                    ConsumerCreditMath.DefaultTermPeriods)
+            };
+
+            var nextDefinition = CloneDefinition(
+                definition,
+                consumerCredits: nextCredits,
+                initialCashBalance: definition.InitialCashBalance + principal);
+            var nextSummary = _calculationEngine.Recalculate(nextDefinition, _current.Expenses, _current.AssetOperations);
+            var nextState = new PeriodRuntimeState(
+                _current.RunId,
+                _current.PeriodNumber,
+                PeriodFlowState.PeriodActive,
+                nextDefinition,
+                _current.Expenses,
+                _current.AssetOperations,
+                nextSummary,
+                AssetOperationDialogState.Closed,
+                _current.IsCheckpointSubmitted,
+                "Кредит оформлен.",
+                string.Empty,
+                _current.SubmittedAtUtc,
+                true);
+
+            Publish(nextState);
+            PersistCurrentState();
+            return true;
         }
 
         public void ApplyPermanentIncomeLoss()
@@ -819,6 +923,7 @@ namespace Game.Core.Application.Periods
                 carryOverCashBalance = state.Summary != null ? state.Summary.CashBalance : 0d,
                 carryOverDepositBalance = carryOverDepositBalance,
                 carryOverAccumulatedUje = state.Summary != null ? state.Summary.Uje : 0d,
+                consumerCredits = BuildConsumerCreditSnapshots(state.Definition.ConsumerCredits),
                 expenses = BuildExpenseSnapshots(state.Expenses),
                 assetOperations = BuildOperationSnapshots(state.AssetOperations),
                 isCheckpointSubmitted = state.IsCheckpointSubmitted,
@@ -1040,6 +1145,14 @@ namespace Game.Core.Application.Periods
                 return true;
             }
 
+            if (IsFixedAmountExpense(definition)
+                && targetAmount > 0d
+                && Math.Abs(targetAmount - definition.MinimumAmount) > 0.01d)
+            {
+                validationMessage = $"Для «{definition.Title}» доступна только фиксированная сумма {EcuFormatter.FormatAmount(definition.MinimumAmount)}.";
+                return false;
+            }
+
             if (CanUseDebtForExpense(definition, targetSource))
             {
                 return true;
@@ -1054,6 +1167,21 @@ namespace Game.Core.Application.Periods
 
             validationMessage = BuildExpenseSourceValidationMessage(definition, targetSource, availableAmount);
             return false;
+        }
+
+        private static bool IsConsumerCreditAvailable(PeriodRuntimeDefinition definition)
+        {
+            return definition != null
+                   && definition.Meta != null
+                   && definition.Meta.HasFeature("consumer_credit");
+        }
+
+        private static bool IsFixedAmountExpense(PeriodExpenseDefinition definition)
+        {
+            return definition != null
+                   && definition.MinimumAmount > 0.01d
+                   && definition.MaximumAmount > 0.01d
+                   && Math.Abs(definition.MaximumAmount - definition.MinimumAmount) <= 0.01d;
         }
 
         private bool CanUseDebtForExpense(PeriodExpenseDefinition definition, FundsSourceType targetSource)
@@ -1416,21 +1544,11 @@ namespace Game.Core.Application.Periods
             double accumulatedUje)
         {
             var currentDefinition = state.Definition;
-            var nextDefinition = new PeriodRuntimeDefinition(
-                currentDefinition.Meta,
-                currentDefinition.InfoBlockValues,
-                currentDefinition.ExpenseDefinitions,
-                currentDefinition.AssetDefinitions,
-                currentDefinition.ValidationSettings,
-                new PeriodCalculationSettings(
-                    currentDefinition.CalculationSettings.CurrentIncomeEcu,
-                    currentDefinition.CalculationSettings.BaseIncomeEcu,
-                    accumulatedUje,
-                    currentDefinition.CalculationSettings.MaximumUje),
-                currentDefinition.EconomyContext,
-                cashBalance,
-                Math.Max(0d, depositBalance),
-                currentDefinition.SourceSummary);
+            var nextDefinition = CloneDefinition(
+                currentDefinition,
+                initialCashBalance: cashBalance,
+                initialDepositBalance: Math.Max(0d, depositBalance),
+                accumulatedUje: accumulatedUje);
             var nextSummary = _calculationEngine.Recalculate(
                 nextDefinition,
                 state.Expenses,
@@ -1476,21 +1594,10 @@ namespace Game.Core.Application.Periods
                 currentEconomy.CashValueMultiplier,
                 currentEconomy.DepositValueMultiplier,
                 true);
-            var nextDefinition = new PeriodRuntimeDefinition(
-                currentDefinition.Meta,
-                currentDefinition.InfoBlockValues,
-                currentDefinition.ExpenseDefinitions,
-                currentDefinition.AssetDefinitions,
-                currentDefinition.ValidationSettings,
-                new PeriodCalculationSettings(
-                    0d,
-                    currentDefinition.CalculationSettings.BaseIncomeEcu,
-                    currentDefinition.CalculationSettings.BaseUje,
-                    currentDefinition.CalculationSettings.MaximumUje),
-                nextEconomy,
-                currentDefinition.InitialCashBalance,
-                currentDefinition.InitialDepositBalance,
-                currentDefinition.SourceSummary);
+            var nextDefinition = CloneDefinition(
+                currentDefinition,
+                economyContext: nextEconomy,
+                currentIncomeEcu: 0d);
             var nextExpenses = BuildPostFiringExpenseStates(state.Expenses, currentDefinition.ExpenseDefinitions);
             var nextSummary = _calculationEngine.Recalculate(
                 nextDefinition,
@@ -1511,6 +1618,40 @@ namespace Game.Core.Application.Periods
                 state.LastError,
                 state.SubmittedAtUtc,
                 state.HasPendingLocalChanges);
+        }
+
+        private static PeriodRuntimeDefinition CloneDefinition(
+            PeriodRuntimeDefinition definition,
+            IReadOnlyList<ConsumerCreditContractRuntime> consumerCredits = null,
+            double? initialCashBalance = null,
+            double? initialDepositBalance = null,
+            double? accumulatedUje = null,
+            PeriodEconomyContext economyContext = null,
+            double? currentIncomeEcu = null)
+        {
+            if (definition == null)
+            {
+                return null;
+            }
+
+            var settings = definition.CalculationSettings ?? new PeriodCalculationSettings(0d, 0d, 0d, 0d);
+
+            return new PeriodRuntimeDefinition(
+                definition.Meta,
+                definition.InfoBlockValues,
+                definition.ExpenseDefinitions,
+                definition.AssetDefinitions,
+                definition.ValidationSettings,
+                new PeriodCalculationSettings(
+                    currentIncomeEcu ?? settings.CurrentIncomeEcu,
+                    settings.BaseIncomeEcu,
+                    accumulatedUje ?? settings.BaseUje,
+                    settings.MaximumUje),
+                economyContext ?? definition.EconomyContext,
+                consumerCredits ?? definition.ConsumerCredits,
+                initialCashBalance ?? definition.InitialCashBalance,
+                initialDepositBalance ?? definition.InitialDepositBalance,
+                definition.SourceSummary);
         }
 
         private static IReadOnlyList<PeriodExpenseState> BuildPostFiringExpenseStates(
@@ -1544,6 +1685,36 @@ namespace Game.Core.Application.Periods
                 result.Add(nextSource == expenseState.Source
                     ? expenseState
                     : expenseState.With(source: nextSource));
+            }
+
+            return result;
+        }
+
+        private static ConsumerCreditContractSnapshotDto[] BuildConsumerCreditSnapshots(
+            IReadOnlyList<ConsumerCreditContractRuntime> credits)
+        {
+            if (credits == null || credits.Count == 0)
+            {
+                return Array.Empty<ConsumerCreditContractSnapshotDto>();
+            }
+
+            var result = new ConsumerCreditContractSnapshotDto[credits.Count];
+
+            for (var index = 0; index < credits.Count; index++)
+            {
+                var credit = credits[index];
+                result[index] = credit == null
+                    ? null
+                    : new ConsumerCreditContractSnapshotDto
+                    {
+                        creditId = credit.CreditId,
+                        originationPeriodNumber = credit.OriginationPeriodNumber,
+                        originalPrincipal = credit.OriginalPrincipal,
+                        remainingPrincipal = credit.RemainingPrincipal,
+                        periodicPayment = credit.PeriodicPayment,
+                        fixedRatePercent = credit.FixedRatePercent,
+                        remainingPeriods = credit.RemainingPeriods
+                    };
             }
 
             return result;

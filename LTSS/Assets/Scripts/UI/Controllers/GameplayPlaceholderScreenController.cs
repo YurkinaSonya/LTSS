@@ -45,8 +45,10 @@ public sealed class GameplayPlaceholderScreenController : ScreenController
             OnBack,
             OnComplete,
             OnExpenseAmountChanged,
+            OnApplyRequiredExpenseAmount,
             OnExpenseSourceChanged,
-            OnAssetAction);
+            OnAssetAction,
+            OnConsumerCreditAction);
     }
 
     private void OnBack()
@@ -64,6 +66,11 @@ public sealed class GameplayPlaceholderScreenController : ScreenController
         Context.PeriodGameplay?.SetExpenseAmount(expenseId, rawAmount);
     }
 
+    private void OnApplyRequiredExpenseAmount(string expenseId)
+    {
+        Context.PeriodGameplay?.ApplyRequiredExpenseAmount(expenseId);
+    }
+
     private void OnExpenseSourceChanged(string expenseId, FundsSourceType source)
     {
         Context.PeriodGameplay?.SetExpenseSource(expenseId, source);
@@ -72,5 +79,10 @@ public sealed class GameplayPlaceholderScreenController : ScreenController
     private void OnAssetAction(string assetId, AssetOperationKind kind)
     {
         Context.PeriodGameplay?.OpenAssetDialog(assetId, kind);
+    }
+
+    private void OnConsumerCreditAction()
+    {
+        Context.PeriodGameplay?.OpenConsumerCreditDialog();
     }
 }

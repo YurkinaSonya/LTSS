@@ -38,6 +38,35 @@ namespace Game.Domain.GameFlow
         Withdraw
     }
 
+    public sealed class ConsumerCreditContractRuntime
+    {
+        public string CreditId { get; }
+        public int OriginationPeriodNumber { get; }
+        public double OriginalPrincipal { get; }
+        public double RemainingPrincipal { get; }
+        public double PeriodicPayment { get; }
+        public double FixedRatePercent { get; }
+        public int RemainingPeriods { get; }
+
+        public ConsumerCreditContractRuntime(
+            string creditId,
+            int originationPeriodNumber,
+            double originalPrincipal,
+            double remainingPrincipal,
+            double periodicPayment,
+            double fixedRatePercent,
+            int remainingPeriods)
+        {
+            CreditId = creditId ?? string.Empty;
+            OriginationPeriodNumber = originationPeriodNumber;
+            OriginalPrincipal = originalPrincipal;
+            RemainingPrincipal = remainingPrincipal;
+            PeriodicPayment = periodicPayment;
+            FixedRatePercent = fixedRatePercent;
+            RemainingPeriods = remainingPeriods;
+        }
+    }
+
     public sealed class PeriodMeta
     {
         public string PeriodId { get; }
@@ -319,6 +348,7 @@ namespace Game.Domain.GameFlow
         public PeriodValidationSettings ValidationSettings { get; }
         public PeriodCalculationSettings CalculationSettings { get; }
         public PeriodEconomyContext EconomyContext { get; }
+        public IReadOnlyList<ConsumerCreditContractRuntime> ConsumerCredits { get; }
         public double InitialCashBalance { get; }
         public double InitialDepositBalance { get; }
         public string SourceSummary { get; }
@@ -331,6 +361,7 @@ namespace Game.Domain.GameFlow
             PeriodValidationSettings validationSettings,
             PeriodCalculationSettings calculationSettings,
             PeriodEconomyContext economyContext,
+            IReadOnlyList<ConsumerCreditContractRuntime> consumerCredits,
             double initialCashBalance,
             double initialDepositBalance,
             string sourceSummary)
@@ -356,6 +387,9 @@ namespace Game.Domain.GameFlow
             ValidationSettings = validationSettings ?? new PeriodValidationSettings(true, true, true, 0.01d, 0d);
             CalculationSettings = calculationSettings ?? new PeriodCalculationSettings(0d, 100d, 0d, 0d);
             EconomyContext = economyContext ?? PeriodEconomyContext.Empty;
+            ConsumerCredits = consumerCredits != null
+                ? new List<ConsumerCreditContractRuntime>(consumerCredits)
+                : Array.Empty<ConsumerCreditContractRuntime>();
             InitialCashBalance = initialCashBalance;
             InitialDepositBalance = initialDepositBalance;
             SourceSummary = sourceSummary ?? string.Empty;

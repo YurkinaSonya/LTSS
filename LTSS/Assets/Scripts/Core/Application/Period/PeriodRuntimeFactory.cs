@@ -228,10 +228,15 @@ namespace Game.Core.Application.Periods
                 "minimumEnergy") ?? 0d;
 
             var validationSettings = BuildValidationSettings(periodNode, sessionRoot, minimumUje);
-            var expenseDefinitions = BuildExpenseDefinitions(periodNode, sessionRoot, economyContext);
+            var baseExpenseDefinitions = BuildExpenseDefinitions(periodNode, sessionRoot, economyContext);
             var assetDefinitions = BuildAssetDefinitions();
+            var activeCredits = ResolveConsumerCredits(runId, periodNumber);
             var initialCash = ResolveInitialAssetBalance(assignedRoot, periodNode, sessionRoot, "cash") ?? 0d;
             var initialDeposit = ResolveInitialAssetBalance(assignedRoot, periodNode, sessionRoot, "deposit") ?? 0d;
+            var expenseDefinitions = AppendConsumerCreditExpenseDefinitions(
+                baseExpenseDefinitions,
+                activeCredits,
+                periodNumber);
 
             definition = new PeriodRuntimeDefinition(
                 new PeriodMeta(
@@ -253,6 +258,7 @@ namespace Game.Core.Application.Periods
                     baseUje,
                     maximumUje),
                 economyContext,
+                activeCredits,
                 initialCash,
                 initialDeposit,
                 periodNode.Kind != JsonValueKind.Null
@@ -366,6 +372,221 @@ namespace Game.Core.Application.Periods
                     PeriodContractMapper.ToFundsSource(snapshot.source),
                     Math.Max(0d, snapshot.amount),
                     snapshot.createdAtUtc));
+            }
+
+            return result;
+        }
+
+        private IReadOnlyList<ConsumerCreditContractRuntime> ResolveConsumerCredits(string runId, int periodNumber)
+        {
+            if (_persistenceService == null
+                || _serializer == null
+                || string.IsNullOrWhiteSpace(runId)
+                || periodNumber <= 0
+                || !_persistenceService.TryLoadPeriodSnapshot(out var snapshot)
+                || snapshot == null
+                || !string.Equals(snapshot.runId, runId, StringComparison.Ordinal)
+                || string.IsNullOrWhiteSpace(snapshot.rawPeriodStateJson))
+            {
+                return Array.Empty<ConsumerCreditContractRuntime>();
+            }
+
+            if (!_serializer.TryDeserialize(
+                    snapshot.rawPeriodStateJson,
+                    out PeriodRuntimeSnapshotDto dto,
+                    out var deserializeError))
+            {
+                _logger.Warning($"Failed to deserialize persisted consumer credit snapshot. {deserializeError}");
+                return Array.Empty<ConsumerCreditContractRuntime>();
+            }
+
+            var currentCredits = RestoreConsumerCredits(dto != null ? dto.consumerCredits : null);
+
+            if (currentCredits.Count == 0)
+            {
+                return Array.Empty<ConsumerCreditContractRuntime>();
+            }
+
+            if (snapshot.periodNumber == periodNumber)
+            {
+                return currentCredits;
+            }
+
+            if (snapshot.isCheckpointSubmitted && snapshot.periodNumber == periodNumber - 1)
+            {
+                return AdvanceConsumerCreditsForNextPeriod(
+                    snapshot.periodNumber,
+                    currentCredits,
+                    dto != null ? dto.expenses : null);
+            }
+
+            return Array.Empty<ConsumerCreditContractRuntime>();
+        }
+
+        private static IReadOnlyList<ConsumerCreditContractRuntime> RestoreConsumerCredits(
+            IReadOnlyList<ConsumerCreditContractSnapshotDto> snapshots)
+        {
+            if (snapshots == null || snapshots.Count == 0)
+            {
+                return Array.Empty<ConsumerCreditContractRuntime>();
+            }
+
+            var result = new List<ConsumerCreditContractRuntime>(snapshots.Count);
+
+            for (var index = 0; index < snapshots.Count; index++)
+            {
+                var snapshot = snapshots[index];
+
+                if (snapshot == null || string.IsNullOrWhiteSpace(snapshot.creditId))
+                {
+                    continue;
+                }
+
+                result.Add(new ConsumerCreditContractRuntime(
+                    snapshot.creditId,
+                    snapshot.originationPeriodNumber,
+                    Math.Max(0d, snapshot.originalPrincipal),
+                    Math.Max(0d, snapshot.remainingPrincipal),
+                    Math.Max(0d, snapshot.periodicPayment),
+                    snapshot.fixedRatePercent,
+                    Math.Max(0, snapshot.remainingPeriods)));
+            }
+
+            return result;
+        }
+
+        private static IReadOnlyList<ConsumerCreditContractRuntime> AdvanceConsumerCreditsForNextPeriod(
+            int closedPeriodNumber,
+            IReadOnlyList<ConsumerCreditContractRuntime> credits,
+            IReadOnlyList<PeriodExpenseStateSnapshotDto> expenseSnapshots)
+        {
+            if (credits == null || credits.Count == 0)
+            {
+                return Array.Empty<ConsumerCreditContractRuntime>();
+            }
+
+            var result = new List<ConsumerCreditContractRuntime>(credits.Count);
+
+            for (var index = 0; index < credits.Count; index++)
+            {
+                var credit = credits[index];
+
+                if (credit == null
+                    || string.IsNullOrWhiteSpace(credit.CreditId)
+                    || credit.RemainingPeriods <= 0
+                    || credit.RemainingPrincipal <= 0.01d)
+                {
+                    continue;
+                }
+
+                if (closedPeriodNumber <= credit.OriginationPeriodNumber)
+                {
+                    result.Add(credit);
+                    continue;
+                }
+
+                var paymentAmount = ResolveCreditPaymentAmount(credit.CreditId, credit.PeriodicPayment, expenseSnapshots);
+                var nextRemainingPrincipal = ConsumerCreditMath.CalculateNextRemainingPrincipal(
+                    credit.RemainingPrincipal,
+                    paymentAmount,
+                    credit.FixedRatePercent);
+                var nextRemainingPeriods = Math.Max(0, credit.RemainingPeriods - 1);
+
+                if (nextRemainingPeriods <= 0 || nextRemainingPrincipal <= 0.01d)
+                {
+                    continue;
+                }
+
+                result.Add(new ConsumerCreditContractRuntime(
+                    credit.CreditId,
+                    credit.OriginationPeriodNumber,
+                    credit.OriginalPrincipal,
+                    nextRemainingPrincipal,
+                    credit.PeriodicPayment,
+                    credit.FixedRatePercent,
+                    nextRemainingPeriods));
+            }
+
+            return result;
+        }
+
+        private static double ResolveCreditPaymentAmount(
+            string creditId,
+            double fallbackPaymentAmount,
+            IReadOnlyList<PeriodExpenseStateSnapshotDto> expenseSnapshots)
+        {
+            if (expenseSnapshots == null || expenseSnapshots.Count == 0)
+            {
+                return Math.Max(0d, fallbackPaymentAmount);
+            }
+
+            var expenseId = ConsumerCreditMath.BuildExpenseId(creditId);
+
+            for (var index = 0; index < expenseSnapshots.Count; index++)
+            {
+                var snapshot = expenseSnapshots[index];
+
+                if (snapshot == null
+                    || !string.Equals(snapshot.expenseId, expenseId, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                return Math.Max(0d, snapshot.amount);
+            }
+
+            return Math.Max(0d, fallbackPaymentAmount);
+        }
+
+        private static IReadOnlyList<PeriodExpenseDefinition> AppendConsumerCreditExpenseDefinitions(
+            IReadOnlyList<PeriodExpenseDefinition> baseDefinitions,
+            IReadOnlyList<ConsumerCreditContractRuntime> activeCredits,
+            int periodNumber)
+        {
+            var result = new List<PeriodExpenseDefinition>();
+
+            if (baseDefinitions != null)
+            {
+                for (var index = 0; index < baseDefinitions.Count; index++)
+                {
+                    var definition = baseDefinitions[index];
+
+                    if (definition != null)
+                    {
+                        result.Add(definition);
+                    }
+                }
+            }
+
+            if (activeCredits == null || activeCredits.Count == 0)
+            {
+                return result;
+            }
+
+            for (var index = 0; index < activeCredits.Count; index++)
+            {
+                var credit = activeCredits[index];
+
+                if (credit == null
+                    || string.IsNullOrWhiteSpace(credit.CreditId)
+                    || periodNumber <= credit.OriginationPeriodNumber
+                    || credit.RemainingPeriods <= 0
+                    || credit.RemainingPrincipal <= 0.01d)
+                {
+                    continue;
+                }
+
+                result.Add(new PeriodExpenseDefinition(
+                    ConsumerCreditMath.BuildExpenseId(credit.CreditId),
+                    "Платёж по кредиту",
+                    true,
+                    credit.PeriodicPayment,
+                    credit.PeriodicPayment,
+                    credit.PeriodicPayment,
+                    new[] { FundsSourceType.CurrentIncome, FundsSourceType.Cash },
+                    0d,
+                    0d,
+                    string.Empty));
             }
 
             return result;
@@ -503,6 +724,21 @@ namespace Game.Core.Application.Periods
                     "depositRate",
                     "depositInterestRate",
                     "savingsRate"));
+            if (configuredPeriod != null && configuredPeriod.HasFeature("consumer_credit"))
+            {
+                AddInfoValueIfMissing(
+                    result,
+                    CreateStatisticsInfoValue(
+                        periodNode,
+                        sessionRoot,
+                        "credit_rate",
+                        "Ставка по кредиту",
+                        periodStatistics != null ? periodStatistics.CreditRate : null,
+                        "%",
+                        "creditRate",
+                        "consumerCreditRate",
+                        "loanRate"));
+            }
 
             return result;
         }
@@ -1273,6 +1509,7 @@ namespace Game.Core.Application.Periods
                     accumulatedUje ?? settings.BaseUje,
                     settings.MaximumUje),
                 definition.EconomyContext,
+                definition.ConsumerCredits,
                 initialCashBalance ?? definition.InitialCashBalance,
                 initialDepositBalance ?? definition.InitialDepositBalance,
                 definition.SourceSummary);

@@ -15,6 +15,7 @@ public class Enums
         Casual,
         Results,
         AssetOperation,
-        InterPeriodBlock
+        InterPeriodBlock,
+        ConsumerCredit
     }
 }

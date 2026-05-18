@@ -17,6 +17,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         public GameObject RequiredBadge;
         public Text RequiredBadgeLabel;
         public InputField AmountInput;
+        public Button ApplyRequiredAmountButton;
         public Dropdown SourceDropdown;
     }
 
@@ -49,11 +50,13 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
     private Text _emptyStateLabel;
     private Button _backButton;
     private Button _completeButton;
+    private Button _consumerCreditButton;
     private RectTransform _expenseContent;
     private RectTransform _assetContent;
     private RectTransform _infoContent;
     private RectTransform _mainLayout;
     private RectTransform _footerRow;
+    private ScrollRect _expenseScrollRect;
     private readonly Dictionary<string, ExpenseRowWidgets> _expenseRows = new Dictionary<string, ExpenseRowWidgets>();
     private readonly Dictionary<string, AssetCardWidgets> _assetCards = new Dictionary<string, AssetCardWidgets>();
     private readonly Dictionary<string, InfoRowWidgets> _infoRows = new Dictionary<string, InfoRowWidgets>();
@@ -71,12 +74,15 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         Action onBack,
         Action onComplete,
         Action<string, string> onExpenseAmountChanged,
+        Action<string> onApplyRequiredExpenseAmount,
         Action<string, FundsSourceType> onExpenseSourceChanged,
-        Action<string, AssetOperationKind> onAssetAction)
+        Action<string, AssetOperationKind> onAssetAction,
+        Action onConsumerCreditAction)
     {
         EnsureBuilt();
         BindButton(_backButton, onBack);
         BindButton(_completeButton, onComplete);
+        BindButton(_consumerCreditButton, onConsumerCreditAction);
 
         if (runtimeState == null || !runtimeState.HasDefinition)
         {
@@ -102,7 +108,8 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         ApplyHeader(runtimeState);
         ApplyMetrics(runtimeState);
         ApplyInfo(runtimeState);
-        ApplyExpenses(runtimeState, onExpenseAmountChanged, onExpenseSourceChanged);
+        ApplyExpenses(runtimeState, onExpenseAmountChanged, onApplyRequiredExpenseAmount, onExpenseSourceChanged);
+        ApplyConsumerCredit(runtimeState);
         ApplyAssets(runtimeState, onAssetAction);
         ApplyFooter(runtimeState);
     }
@@ -181,8 +188,11 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         var rightColumn = CreateVerticalGroup(_mainLayout, "RightColumn", 16f, TextAnchor.UpperLeft);
         AddLayoutElement(rightColumn.gameObject, preferredWidth: 420f, flexibleWidth: 0.8f, flexibleHeight: 1f);
 
-        _expenseContent = CreateSection(leftColumn, "Расходы");
+        _expenseContent = CreateScrollableSection(leftColumn, "Расходы", out _expenseScrollRect);
         AddLayoutElement(_expenseContent.parent.gameObject, flexibleHeight: 1f);
+
+        _consumerCreditButton = RuntimeUiFactory.CreateSecondaryButton(leftColumn, "Взять потребительский кредит", 46f);
+        AddLayoutElement(_consumerCreditButton.gameObject, preferredHeight: 46f);
 
         _assetContent = CreateSection(leftColumn, "Активы");
         _infoContent = CreateSection(rightColumn, "Параметры периода");
@@ -278,6 +288,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
     private void ApplyExpenses(
         PeriodRuntimeState runtimeState,
         Action<string, string> onExpenseAmountChanged,
+        Action<string> onApplyRequiredExpenseAmount,
         Action<string, FundsSourceType> onExpenseSourceChanged)
     {
         var canEdit = runtimeState.FlowState != PeriodFlowState.PeriodCheckpointSubmitting
@@ -301,6 +312,14 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
             widgets.MetaLabel.color = expenseDefinition.IsRequired
                 ? RuntimeUiFactory.PrimaryColor
                 : RuntimeUiFactory.TextSecondaryColor;
+            var creditContract = FindConsumerCredit(runtimeState, expenseDefinition.Id);
+
+            if (creditContract != null)
+            {
+                widgets.MetaLabel.text =
+                    $"ост. {creditContract.RemainingPeriods} пер. | долг {FormatMoney(creditContract.RemainingPrincipal)}";
+                widgets.MetaLabel.color = RuntimeUiFactory.PrimaryColor;
+            }
 
             if (widgets.RequiredBadge != null)
             {
@@ -325,6 +344,16 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
             widgets.AmountInput.onValueChanged.AddListener(value => onExpenseAmountChanged?.Invoke(expenseDefinition.Id, value));
             widgets.AmountInput.interactable = canEdit;
 
+            if (widgets.ApplyRequiredAmountButton != null)
+            {
+                var showQuickApply = IsFixedAmountExpense(expenseDefinition);
+                widgets.ApplyRequiredAmountButton.gameObject.SetActive(showQuickApply);
+                widgets.ApplyRequiredAmountButton.interactable = canEdit && showQuickApply;
+                BindButton(
+                    widgets.ApplyRequiredAmountButton,
+                    showQuickApply ? (Action)(() => onApplyRequiredExpenseAmount?.Invoke(expenseDefinition.Id)) : null);
+            }
+
             var allowedSources = expenseDefinition.AllowedSources ?? Array.Empty<FundsSourceType>();
             var selectedSource = expenseState != null
                 ? expenseState.Source
@@ -347,6 +376,34 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
                 });
             }
         }
+
+        if (_expenseScrollRect != null)
+        {
+            LayoutRebuilder.ForceRebuildLayoutImmediate(_expenseContent);
+        }
+    }
+
+    private void ApplyConsumerCredit(PeriodRuntimeState runtimeState)
+    {
+        if (_consumerCreditButton == null)
+        {
+            return;
+        }
+
+        var isVisible = runtimeState != null
+                        && runtimeState.HasDefinition
+                        && runtimeState.Definition.Meta != null
+                        && runtimeState.Definition.Meta.HasFeature("consumer_credit");
+        _consumerCreditButton.gameObject.SetActive(isVisible);
+
+        if (!isVisible)
+        {
+            return;
+        }
+
+        _consumerCreditButton.interactable = runtimeState.FlowState == PeriodFlowState.PeriodIntro
+                                             || runtimeState.FlowState == PeriodFlowState.PeriodActive
+                                             || runtimeState.FlowState == PeriodFlowState.PeriodValidation;
     }
 
     private void ApplyAssets(
@@ -472,6 +529,16 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
             requiredLabel.color = RuntimeUiFactory.PrimaryColor;
             requiredBadge.gameObject.SetActive(false);
 
+            var applyRequiredAmountButton = RuntimeUiFactory.CreateSecondaryButton(row, "=", 42f);
+            AddLayoutElement(
+                applyRequiredAmountButton.gameObject,
+                minimumWidth: 40f,
+                minimumHeight: 40f,
+                preferredWidth: 40f,
+                preferredHeight: 40f,
+                flexibleWidth: 0f,
+                flexibleHeight: 0f);
+
             var amountField = RuntimeUiFactory.CreateInputField(row, "0");
             NumericInputParser.Configure(amountField);
             AddLayoutElement(amountField.gameObject, minimumHeight: 25f, preferredWidth: 160f);
@@ -487,6 +554,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
                 RequiredBadge = requiredBadge.gameObject,
                 RequiredBadgeLabel = requiredLabel,
                 AmountInput = amountField,
+                ApplyRequiredAmountButton = applyRequiredAmountButton,
                 SourceDropdown = sourceDropdown
             };
         }
@@ -601,6 +669,39 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         }
 
         return null;
+    }
+
+    private static ConsumerCreditContractRuntime FindConsumerCredit(PeriodRuntimeState runtimeState, string expenseId)
+    {
+        if (runtimeState == null
+            || runtimeState.Definition == null
+            || runtimeState.Definition.ConsumerCredits == null
+            || !ConsumerCreditMath.IsCreditExpenseId(expenseId))
+        {
+            return null;
+        }
+
+        var creditId = ConsumerCreditMath.ExtractCreditId(expenseId);
+
+        for (var index = 0; index < runtimeState.Definition.ConsumerCredits.Count; index++)
+        {
+            var credit = runtimeState.Definition.ConsumerCredits[index];
+
+            if (credit != null && string.Equals(credit.CreditId, creditId, StringComparison.Ordinal))
+            {
+                return credit;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsFixedAmountExpense(PeriodExpenseDefinition definition)
+    {
+        return definition != null
+               && definition.MinimumAmount > 0.01d
+               && definition.MaximumAmount > 0.01d
+               && Math.Abs(definition.MaximumAmount - definition.MinimumAmount) <= 0.01d;
     }
 
     private static bool NeedsRebuild<TItem, TDefinition>(
@@ -765,6 +866,62 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         return content;
     }
 
+    private static RectTransform CreateScrollableSection(Transform parent, string title, out ScrollRect scrollRect)
+    {
+        var section = RuntimeUiFactory.CreateSurface(title, parent, RuntimeUiFactory.SurfaceColor);
+        AddLayoutElement(section.gameObject, flexibleHeight: 1f);
+        var layout = section.gameObject.AddComponent<VerticalLayoutGroup>();
+        layout.padding = new RectOffset(18, 18, 18, 18);
+        layout.spacing = 12f;
+        layout.childAlignment = TextAnchor.UpperLeft;
+        layout.childControlWidth = true;
+        layout.childControlHeight = true;
+        layout.childForceExpandWidth = true;
+        layout.childForceExpandHeight = false;
+
+        RuntimeUiFactory.CreateBodyText(section, title);
+
+        var scrollArea = CreateRow(section, "ExpenseScrollArea", 8f, TextAnchor.UpperLeft);
+        var scrollAreaLayout = scrollArea.GetComponent<HorizontalLayoutGroup>();
+        scrollAreaLayout.childForceExpandWidth = false;
+        scrollAreaLayout.childForceExpandHeight = true;
+        scrollAreaLayout.childControlHeight = true;
+        AddLayoutElement(scrollArea.gameObject, flexibleHeight: 1f, minimumHeight: 260f);
+
+        var viewport = CreateRect("ExpenseViewport", scrollArea);
+        AddLayoutElement(viewport.gameObject, flexibleWidth: 1f, flexibleHeight: 1f, minimumHeight: 260f);
+        var viewportImage = viewport.gameObject.AddComponent<Image>();
+        viewportImage.color = Color.white;
+        var viewportMask = viewport.gameObject.AddComponent<Mask>();
+        viewportMask.showMaskGraphic = false;
+
+        scrollRect = section.gameObject.AddComponent<ScrollRect>();
+        scrollRect.viewport = viewport;
+        scrollRect.horizontal = false;
+        scrollRect.vertical = true;
+        scrollRect.movementType = ScrollRect.MovementType.Clamped;
+        scrollRect.scrollSensitivity = 24f;
+        var verticalScrollbar = CreateVerticalScrollbar(scrollArea);
+        scrollRect.verticalScrollbar = verticalScrollbar;
+        scrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
+
+        var content = RuntimeUiFactory.CreateContentRoot(
+            "ExpenseContent",
+            viewport,
+            new RectOffset(0, 0, 0, 0),
+            10f);
+        content.anchorMin = new Vector2(0f, 1f);
+        content.anchorMax = new Vector2(1f, 1f);
+        content.pivot = new Vector2(0.5f, 1f);
+        content.anchoredPosition = Vector2.zero;
+        content.sizeDelta = new Vector2(0f, 0f);
+        var fitter = content.gameObject.AddComponent<ContentSizeFitter>();
+        fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+        fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+        scrollRect.content = content;
+        return content;
+    }
+
     private static RectTransform CreateVerticalGroup(
         Transform parent,
         string name,
@@ -909,6 +1066,41 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         }
 
         return result;
+    }
+
+    private static Scrollbar CreateVerticalScrollbar(Transform parent)
+    {
+        var root = CreateRect("VerticalScrollbar", parent);
+        AddLayoutElement(root.gameObject, preferredWidth: 8f, minimumWidth: 8f, flexibleHeight: 1f);
+
+        var trackImage = root.gameObject.AddComponent<Image>();
+        trackImage.color = new Color(
+            RuntimeUiFactory.BorderColor.r,
+            RuntimeUiFactory.BorderColor.g,
+            RuntimeUiFactory.BorderColor.b,
+            0.55f);
+
+        var scrollbar = root.gameObject.AddComponent<Scrollbar>();
+        scrollbar.direction = Scrollbar.Direction.BottomToTop;
+        scrollbar.size = 0.25f;
+        scrollbar.targetGraphic = trackImage;
+
+        var slidingArea = CreateRect("SlidingArea", root);
+        slidingArea.anchorMin = Vector2.zero;
+        slidingArea.anchorMax = Vector2.one;
+        slidingArea.offsetMin = Vector2.zero;
+        slidingArea.offsetMax = Vector2.zero;
+
+        var handle = CreateRect("Handle", slidingArea);
+        handle.anchorMin = new Vector2(0f, 0f);
+        handle.anchorMax = new Vector2(1f, 0.2f);
+        handle.offsetMin = Vector2.zero;
+        handle.offsetMax = Vector2.zero;
+
+        var handleImage = handle.gameObject.AddComponent<Image>();
+        handleImage.color = RuntimeUiFactory.PrimaryColor;
+        scrollbar.handleRect = handle;
+        return scrollbar;
     }
 
     private static void SyncInputFieldText(InputField inputField, string value)

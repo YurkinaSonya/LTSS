@@ -31,6 +31,7 @@ namespace Game.Core.Application.Session
         public double carryOverCashBalance;
         public double carryOverDepositBalance;
         public double carryOverAccumulatedUje;
+        public ConsumerCreditContractSnapshotDto[] consumerCredits;
         public PeriodExpenseStateSnapshotDto[] expenses;
         public PeriodAssetOperationSnapshotDto[] assetOperations;
         public bool isCheckpointSubmitted;
@@ -57,5 +58,17 @@ namespace Game.Core.Application.Session
         public string source;
         public double amount;
         public string createdAtUtc;
+    }
+
+    [Serializable]
+    public sealed class ConsumerCreditContractSnapshotDto
+    {
+        public string creditId;
+        public int originationPeriodNumber;
+        public double originalPrincipal;
+        public double remainingPrincipal;
+        public double periodicPayment;
+        public double fixedRatePercent;
+        public int remainingPeriods;
     }
 }

@@ -198,12 +198,12 @@ namespace Game.Core.Application.Periods
                     true));
             }
 
-            if (string.Equals(expenseDefinition.Id, "housing_rent", StringComparison.Ordinal)
+            if (IsFixedAmountExpense(expenseDefinition)
                 && amount > ComparisonTolerance
                 && Math.Abs(amount - expenseDefinition.MinimumAmount) > definition.ValidationSettings.CompletionRemainderTolerance)
             {
                 issues.Add(new PeriodValidationIssue(
-                    "housing_rent_fixed_amount",
+                    "fixed_expense_amount",
                     $"Для статьи «{expenseDefinition.Title}» доступна только фиксированная сумма {EcuFormatter.FormatAmount(expenseDefinition.MinimumAmount)}.",
                     expenseDefinition.Id,
                     true));
@@ -276,6 +276,14 @@ namespace Game.Core.Application.Periods
                 default:
                     return 0d;
             }
+        }
+
+        private static bool IsFixedAmountExpense(PeriodExpenseDefinition expenseDefinition)
+        {
+            return expenseDefinition != null
+                   && expenseDefinition.MinimumAmount > ComparisonTolerance
+                   && expenseDefinition.MaximumAmount > ComparisonTolerance
+                   && Math.Abs(expenseDefinition.MaximumAmount - expenseDefinition.MinimumAmount) <= ComparisonTolerance;
         }
 
         private static double CalculateGoodsServicesContribution(
