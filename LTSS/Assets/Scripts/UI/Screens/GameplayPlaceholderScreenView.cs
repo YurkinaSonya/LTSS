@@ -50,8 +50,11 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
     private Text _emptyStateLabel;
     private Button _backButton;
     private Button _completeButton;
-    private RectTransform _loanActionRow;
+    private RectTransform _actionButtonsColumn;
+    private RectTransform _consumerCreditRow;
+    private RectTransform _housingActionRow;
     private Button _consumerCreditButton;
+    private Button _apartmentButton;
     private Button _mortgageButton;
     private RectTransform _expenseContent;
     private RectTransform _assetContent;
@@ -80,12 +83,14 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         Action<string, FundsSourceType> onExpenseSourceChanged,
         Action<string, AssetOperationKind> onAssetAction,
         Action onConsumerCreditAction,
+        Action onApartmentPurchaseAction,
         Action onMortgageAction)
     {
         EnsureBuilt();
         BindButton(_backButton, onBack);
         BindButton(_completeButton, onComplete);
         BindButton(_consumerCreditButton, onConsumerCreditAction);
+        BindButton(_apartmentButton, onApartmentPurchaseAction);
         BindButton(_mortgageButton, onMortgageAction);
 
         if (runtimeState == null || !runtimeState.HasDefinition)
@@ -113,7 +118,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         ApplyMetrics(runtimeState);
         ApplyInfo(runtimeState);
         ApplyExpenses(runtimeState, onExpenseAmountChanged, onApplyRequiredExpenseAmount, onExpenseSourceChanged);
-        ApplyConsumerCredit(runtimeState);
+        ApplyActionButtons(runtimeState);
         ApplyAssets(runtimeState, onAssetAction);
         ApplyFooter(runtimeState);
     }
@@ -195,11 +200,17 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         _expenseContent = CreateScrollableSection(leftColumn, "Расходы", out _expenseScrollRect);
         AddLayoutElement(_expenseContent.parent.gameObject, flexibleHeight: 1f);
 
-        _loanActionRow = CreateRow(leftColumn, "LoanActionRow", 12f, TextAnchor.MiddleCenter);
-        AddLayoutElement(_loanActionRow.gameObject, preferredHeight: 46f);
-        _consumerCreditButton = RuntimeUiFactory.CreateSecondaryButton(_loanActionRow, "Потребительский кредит", 46f);
+        _actionButtonsColumn = CreateVerticalGroup(leftColumn, "ActionButtonsColumn", 12f, TextAnchor.UpperLeft);
+        AddLayoutElement(_actionButtonsColumn.gameObject, preferredHeight: 104f);
+        _consumerCreditRow = CreateRow(_actionButtonsColumn, "ConsumerCreditRow", 0f, TextAnchor.MiddleCenter);
+        AddLayoutElement(_consumerCreditRow.gameObject, preferredHeight: 46f);
+        _consumerCreditButton = RuntimeUiFactory.CreateSecondaryButton(_consumerCreditRow, "Потребительский кредит", 46f);
         AddLayoutElement(_consumerCreditButton.gameObject, flexibleWidth: 1f, preferredHeight: 46f);
-        _mortgageButton = RuntimeUiFactory.CreateSecondaryButton(_loanActionRow, "Ипотека", 46f);
+        _housingActionRow = CreateRow(_actionButtonsColumn, "HousingActionRow", 12f, TextAnchor.MiddleCenter);
+        AddLayoutElement(_housingActionRow.gameObject, preferredHeight: 46f);
+        _apartmentButton = RuntimeUiFactory.CreateSecondaryButton(_housingActionRow, "Купить квартиру", 46f);
+        AddLayoutElement(_apartmentButton.gameObject, flexibleWidth: 1f, preferredHeight: 46f);
+        _mortgageButton = RuntimeUiFactory.CreateSecondaryButton(_housingActionRow, "Оформить ипотеку", 46f);
         AddLayoutElement(_mortgageButton.gameObject, flexibleWidth: 1f, preferredHeight: 46f);
 
         _assetContent = CreateSection(leftColumn, "Активы");
@@ -391,9 +402,9 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         }
     }
 
-    private void ApplyConsumerCredit(PeriodRuntimeState runtimeState)
+    private void ApplyActionButtons(PeriodRuntimeState runtimeState)
     {
-        if (_consumerCreditButton == null || _mortgageButton == null)
+        if (_consumerCreditButton == null || _mortgageButton == null || _apartmentButton == null)
         {
             return;
         }
@@ -409,22 +420,32 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
                            && runtimeState.HasDefinition
                            && runtimeState.Definition.Meta != null
                            && runtimeState.Definition.Meta.HasFeature("mortgage");
+        var ownsApartment = runtimeState != null
+                            && runtimeState.HasDefinition
+                            && runtimeState.Definition.ResidenceOwnership != null;
+        var canTakeMortgage = showMortgage && !ownsApartment && !HasActiveMortgage(runtimeState);
 
-        if (_loanActionRow != null)
+        if (_actionButtonsColumn != null)
         {
-            _loanActionRow.gameObject.SetActive(showConsumerCredit || showMortgage);
+            _actionButtonsColumn.gameObject.SetActive(showConsumerCredit || showMortgage && !ownsApartment);
+        }
+
+        if (_consumerCreditRow != null)
+        {
+            _consumerCreditRow.gameObject.SetActive(showConsumerCredit);
+        }
+
+        if (_housingActionRow != null)
+        {
+            _housingActionRow.gameObject.SetActive(showMortgage && !ownsApartment);
         }
 
         _consumerCreditButton.gameObject.SetActive(showConsumerCredit);
-        _mortgageButton.gameObject.SetActive(showMortgage);
-
-        if (!showConsumerCredit && !showMortgage)
-        {
-            return;
-        }
-
+        _apartmentButton.gameObject.SetActive(showMortgage && !ownsApartment);
+        _mortgageButton.gameObject.SetActive(canTakeMortgage);
         _consumerCreditButton.interactable = canEdit && showConsumerCredit;
-        _mortgageButton.interactable = canEdit && showMortgage;
+        _apartmentButton.interactable = canEdit && showMortgage && !ownsApartment;
+        _mortgageButton.interactable = canEdit && canTakeMortgage;
     }
 
     private void ApplyAssets(
@@ -447,6 +468,9 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
             widgets.TitleLabel.text = asset.Title;
             widgets.ValueLabel.text = FormatMoney(asset.CurrentAmount);
             widgets.CaptionLabel.text = $"На начало периода: {FormatMoney(asset.InitialAmount)}";
+            RuntimeUiFactory.SetButtonText(
+                widgets.WithdrawButton,
+                asset.AssetType == PeriodAssetType.Apartment ? "Продать" : "Снять");
 
             widgets.DepositButton.gameObject.SetActive(asset.AllowsDeposit);
             widgets.WithdrawButton.gameObject.SetActive(asset.AllowsWithdraw);
@@ -592,6 +616,12 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         _assetCards.Clear();
 
         var cardsRow = CreateRow(_assetContent, "AssetCards", 14f, TextAnchor.MiddleCenter);
+        var cardsLayout = cardsRow.GetComponent<HorizontalLayoutGroup>();
+
+        if (cardsLayout != null)
+        {
+            cardsLayout.childForceExpandWidth = true;
+        }
 
         foreach (var asset in assets)
         {
@@ -715,6 +745,31 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         }
 
         return null;
+    }
+
+    private static bool HasActiveMortgage(PeriodRuntimeState runtimeState)
+    {
+        if (runtimeState == null
+            || runtimeState.Definition == null
+            || runtimeState.Definition.ConsumerCredits == null)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < runtimeState.Definition.ConsumerCredits.Count; index++)
+        {
+            var credit = runtimeState.Definition.ConsumerCredits[index];
+
+            if (credit != null
+                && string.Equals(credit.ContractType, ConsumerCreditMath.MortgageKind, StringComparison.Ordinal)
+                && credit.RemainingPeriods > 0
+                && credit.RemainingPrincipal > 0.01d)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool IsFixedAmountExpense(PeriodExpenseDefinition definition)

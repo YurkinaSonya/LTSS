@@ -15,11 +15,15 @@ namespace Game.Core.Application.Periods
         void CycleExpenseSource(string expenseId);
         void OpenAssetDialog(string assetId, AssetOperationKind kind);
         void OpenConsumerCreditDialog();
+        void OpenApartmentPurchaseDialog();
+        void OpenApartmentSaleDialog();
         void OpenMortgageDialog();
         void SetAssetDialogSource(FundsSourceType source);
         void CycleAssetDialogSource();
         void SubmitAssetDialog(string rawAmount);
         bool TrySubmitConsumerCredit(string rawAmount, out string errorMessage);
+        bool TryBuyApartment(out string errorMessage);
+        bool TrySellApartment(out string errorMessage);
         bool TrySubmitMortgage(out string errorMessage);
         void CloseAssetDialog();
         void ApplyPermanentIncomeLoss();

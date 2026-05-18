@@ -228,8 +228,13 @@ namespace Game.Core.Application.Periods
                 "minimumEnergy") ?? 0d;
 
             var validationSettings = BuildValidationSettings(periodNode, sessionRoot, minimumUje);
-            var baseExpenseDefinitions = BuildExpenseDefinitions(periodNode, sessionRoot, economyContext);
-            var assetDefinitions = BuildAssetDefinitions();
+            var residenceOwnership = ResolveResidenceOwnership(runId, periodNumber);
+            var baseExpenseDefinitions = BuildExpenseDefinitions(
+                periodNode,
+                sessionRoot,
+                economyContext,
+                residenceOwnership != null);
+            var assetDefinitions = BuildAssetDefinitions(residenceOwnership != null);
             var activeCredits = ResolveConsumerCredits(runId, periodNumber);
             var initialCash = ResolveInitialAssetBalance(assignedRoot, periodNode, sessionRoot, "cash") ?? 0d;
             var initialDeposit = ResolveInitialAssetBalance(assignedRoot, periodNode, sessionRoot, "deposit") ?? 0d;
@@ -259,6 +264,7 @@ namespace Game.Core.Application.Periods
                     maximumUje),
                 economyContext,
                 activeCredits,
+                residenceOwnership,
                 initialCash,
                 initialDeposit,
                 periodNode.Kind != JsonValueKind.Null
@@ -423,6 +429,41 @@ namespace Game.Core.Application.Periods
             return Array.Empty<ConsumerCreditContractRuntime>();
         }
 
+        private ResidenceOwnershipRuntime ResolveResidenceOwnership(string runId, int periodNumber)
+        {
+            if (_persistenceService == null
+                || _serializer == null
+                || string.IsNullOrWhiteSpace(runId)
+                || periodNumber <= 0
+                || !_persistenceService.TryLoadPeriodSnapshot(out var snapshot)
+                || snapshot == null
+                || !string.Equals(snapshot.runId, runId, StringComparison.Ordinal)
+                || string.IsNullOrWhiteSpace(snapshot.rawPeriodStateJson))
+            {
+                return null;
+            }
+
+            if (!_serializer.TryDeserialize(
+                    snapshot.rawPeriodStateJson,
+                    out PeriodRuntimeSnapshotDto dto,
+                    out var deserializeError))
+            {
+                _logger.Warning($"Failed to deserialize persisted residence snapshot. {deserializeError}");
+                return null;
+            }
+
+            var restoredResidence = RestoreResidenceOwnership(dto != null ? dto.residenceOwnership : null);
+
+            if (snapshot.periodNumber == periodNumber)
+            {
+                return restoredResidence;
+            }
+
+            return snapshot.isCheckpointSubmitted && snapshot.periodNumber == periodNumber - 1
+                ? restoredResidence
+                : null;
+        }
+
         private static IReadOnlyList<ConsumerCreditContractRuntime> RestoreConsumerCredits(
             IReadOnlyList<ConsumerCreditContractSnapshotDto> snapshots)
         {
@@ -456,6 +497,23 @@ namespace Game.Core.Application.Periods
             }
 
             return result;
+        }
+
+        private static ResidenceOwnershipRuntime RestoreResidenceOwnership(ResidenceOwnershipSnapshotDto snapshot)
+        {
+            if (snapshot == null || string.IsNullOrWhiteSpace(snapshot.residenceId))
+            {
+                return null;
+            }
+
+            return new ResidenceOwnershipRuntime(
+                snapshot.residenceId,
+                Math.Max(0d, snapshot.purchasePrice),
+                Math.Max(0, snapshot.purchasePeriodNumber),
+                snapshot.purchaseInflationMultiplier > 0d
+                    ? snapshot.purchaseInflationMultiplier
+                    : 1d,
+                snapshot.acquisitionMode);
         }
 
         private static IReadOnlyList<ConsumerCreditContractRuntime> AdvanceConsumerCreditsForNextPeriod(
@@ -645,12 +703,26 @@ namespace Game.Core.Application.Periods
             JsonValue sessionRoot,
             PeriodStatisticsRuntime periodStatistics)
         {
-            return new[]
+            var result = new List<PeriodInfoBlockValue>
             {
                 CreateInfoValue(periodNode, sessionRoot, "inflation", "Инфляция", "%", "inflation", "inflationRate"),
                 CreateInfoValue(periodNode, sessionRoot, "income_growth", "Рост дохода", "%", "nominalIncomeGrowth", "incomeGrowth", "salaryGrowth", "incomeGrowthRate"),
                 CreateInfoValue(periodNode, sessionRoot, "deposit_rate", "Ставка по депозиту", "%", "depositRate", "depositInterestRate", "savingsRate")
             };
+
+            /* if (hasOwnedResidence)
+            {
+                result.Add(new PeriodAssetDefinition(
+                    "apartment",
+                    "Квартира",
+                    PeriodAssetType.Apartment,
+                    false,
+                    true,
+                    Array.Empty<FundsSourceType>(),
+                    "Собственное жильё участника."));
+            } */
+
+            return result;
         }
 
         private PeriodInfoBlockValue CreateInfoValue(
@@ -781,7 +853,7 @@ namespace Game.Core.Application.Periods
             JsonValue sessionRoot,
             PeriodStatisticsRuntime periodStatistics)
         {
-            return new[]
+            var result = new List<PeriodInfoBlockValue>
             {
                 CreateStatisticsInfoValue(
                     periodNode,
@@ -814,6 +886,20 @@ namespace Game.Core.Application.Periods
                     "depositInterestRate",
                     "savingsRate")
             };
+
+            /* if (hasOwnedResidence)
+            {
+                result.Add(new PeriodAssetDefinition(
+                    "apartment",
+                    "Квартира",
+                    PeriodAssetType.Apartment,
+                    false,
+                    true,
+                    Array.Empty<FundsSourceType>(),
+                    "Собственное жильё участника."));
+            } */
+
+            return result;
         }
 
         private PeriodInfoBlockValue CreateStatisticsInfoValue(
@@ -844,7 +930,8 @@ namespace Game.Core.Application.Periods
         private IReadOnlyList<PeriodExpenseDefinition> BuildExpenseDefinitions(
             JsonValue periodNode,
             JsonValue sessionRoot,
-            PeriodEconomyContext economyContext)
+            PeriodEconomyContext economyContext,
+            bool hasOwnedResidence)
         {
             var result = new List<PeriodExpenseDefinition>();
             var expenseNodes = periodNode.FindArrayDescendant("expenses", "availableExpenses", "expenseDefinitions", "spendingCategories");
@@ -896,6 +983,11 @@ namespace Game.Core.Application.Periods
                     allowedSources = defaults.AllowedSources;
                 }
 
+                if (hasOwnedResidence && string.Equals(expenseId, "housing_rent", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
                 result.Add(new PeriodExpenseDefinition(
                     expenseId,
                     string.IsNullOrWhiteSpace(title) ? defaults.Title : title,
@@ -910,16 +1002,21 @@ namespace Game.Core.Application.Periods
             }
 
             EnsureExpense(result, "goods_services", economyContext);
-            EnsureExpense(result, "housing_rent", economyContext);
+
+            if (!hasOwnedResidence)
+            {
+                EnsureExpense(result, "housing_rent", economyContext);
+            }
+
             EnsureExpense(result, "leisure", economyContext);
             EnsureExpense(result, "holiday", economyContext);
 
             return SortExpenses(result);
         }
 
-        private static IReadOnlyList<PeriodAssetDefinition> BuildAssetDefinitions()
+        private static IReadOnlyList<PeriodAssetDefinition> BuildAssetDefinitions(bool hasOwnedResidence)
         {
-            return new[]
+            var result = new List<PeriodAssetDefinition>
             {
                 new PeriodAssetDefinition(
                     "cash",
@@ -938,6 +1035,20 @@ namespace Game.Core.Application.Periods
                     new[] { FundsSourceType.CurrentIncome, FundsSourceType.Cash },
                     "Сбережение периода.")
             };
+
+            if (hasOwnedResidence)
+            {
+                result.Add(new PeriodAssetDefinition(
+                    "apartment",
+                    "Квартира",
+                    PeriodAssetType.Apartment,
+                    false,
+                    true,
+                    Array.Empty<FundsSourceType>(),
+                    "Собственное жильё участника."));
+            }
+
+            return result;
         }
 
         private static PeriodStatisticsRuntime ResolvePeriodStatistics(ClientRuntimeState clientRuntime, int periodNumber)
@@ -1549,6 +1660,7 @@ namespace Game.Core.Application.Periods
                     settings.MaximumUje),
                 definition.EconomyContext,
                 definition.ConsumerCredits,
+                definition.ResidenceOwnership,
                 initialCashBalance ?? definition.InitialCashBalance,
                 initialDepositBalance ?? definition.InitialDepositBalance,
                 definition.SourceSummary);

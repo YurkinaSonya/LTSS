@@ -32,6 +32,7 @@ namespace Game.Core.Application.Session
         public double carryOverDepositBalance;
         public double carryOverAccumulatedUje;
         public ConsumerCreditContractSnapshotDto[] consumerCredits;
+        public ResidenceOwnershipSnapshotDto residenceOwnership;
         public PeriodExpenseStateSnapshotDto[] expenses;
         public PeriodAssetOperationSnapshotDto[] assetOperations;
         public bool isCheckpointSubmitted;
@@ -71,5 +72,15 @@ namespace Game.Core.Application.Session
         public double periodicPayment;
         public double fixedRatePercent;
         public int remainingPeriods;
+    }
+
+    [Serializable]
+    public sealed class ResidenceOwnershipSnapshotDto
+    {
+        public string residenceId;
+        public double purchasePrice;
+        public int purchasePeriodNumber;
+        public double purchaseInflationMultiplier;
+        public string acquisitionMode;
     }
 }

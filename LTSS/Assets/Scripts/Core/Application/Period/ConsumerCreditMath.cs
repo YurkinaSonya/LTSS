@@ -12,6 +12,10 @@ namespace Game.Core.Application.Periods
         public const double MortgagePropertyCost = 300d;
         public const double MortgageDownPayment = 60d;
         public const double MortgagePrincipal = 240d;
+        public const double ApartmentOwnershipUjeBonus = 20d;
+        public const string ApartmentResidenceId = "apartment";
+        public const string DirectApartmentPurchaseMode = "direct";
+        public const string MortgageApartmentPurchaseMode = "mortgage";
 
         public static double CalculateAnnuityPayment(double principal, double? rawRatePercent, int periods = DefaultTermPeriods)
         {
@@ -148,6 +152,26 @@ namespace Game.Core.Application.Periods
             }
 
             return rawPercent.Value / 100d;
+        }
+
+        public static double CalculateResidenceCurrentValue(
+            ResidenceOwnershipRuntime residenceOwnership,
+            PeriodEconomyContext economyContext)
+        {
+            if (residenceOwnership == null)
+            {
+                return 0d;
+            }
+
+            var basePrice = Math.Max(0d, residenceOwnership.PurchasePrice);
+            var purchaseInflationMultiplier = residenceOwnership.PurchaseInflationMultiplier > 0d
+                ? residenceOwnership.PurchaseInflationMultiplier
+                : 1d;
+            var currentInflationMultiplier = economyContext != null
+                ? Math.Max(0.0001d, economyContext.ExpenseInflationMultiplier)
+                : 1d;
+
+            return basePrice * currentInflationMultiplier / purchaseInflationMultiplier;
         }
     }
 }

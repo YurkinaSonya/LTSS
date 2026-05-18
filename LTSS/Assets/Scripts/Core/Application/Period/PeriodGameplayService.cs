@@ -394,6 +394,16 @@ namespace Game.Core.Application.Periods
                 return;
             }
 
+            var assetBalance = FindAssetBalance(assetId);
+
+            if (assetBalance != null
+                && assetBalance.AssetType == PeriodAssetType.Apartment
+                && kind == AssetOperationKind.Withdraw)
+            {
+                OpenApartmentSaleDialog();
+                return;
+            }
+
             var dialog = BuildAssetDialog(assetId, kind, FundsSourceType.Unknown);
 
             if (dialog == null || !dialog.IsOpen)
@@ -421,11 +431,40 @@ namespace Game.Core.Application.Periods
             Publish(_current.With(statusMessage: string.Empty, lastError: string.Empty));
         }
 
+        public void OpenApartmentPurchaseDialog()
+        {
+            if (!_current.HasDefinition
+                || !CanEditCurrentState()
+                || !IsMortgageAvailable(_current.Definition)
+                || HasOwnedResidence(_current.Definition))
+            {
+                return;
+            }
+
+            _popupNavigation?.Push(Enums.PopupType.ApartmentPurchase, "apartment_purchase_open");
+            Publish(_current.With(statusMessage: string.Empty, lastError: string.Empty));
+        }
+
+        public void OpenApartmentSaleDialog()
+        {
+            if (!_current.HasDefinition
+                || !CanEditCurrentState()
+                || !HasOwnedResidence(_current.Definition))
+            {
+                return;
+            }
+
+            _popupNavigation?.Push(Enums.PopupType.ApartmentSale, "apartment_sale_open");
+            Publish(_current.With(statusMessage: string.Empty, lastError: string.Empty));
+        }
+
         public void OpenMortgageDialog()
         {
             if (!_current.HasDefinition
                 || !CanEditCurrentState()
-                || !IsMortgageAvailable(_current.Definition))
+                || !IsMortgageAvailable(_current.Definition)
+                || HasOwnedResidence(_current.Definition)
+                || HasActiveMortgage(_current.Definition.ConsumerCredits))
             {
                 return;
             }
@@ -659,6 +698,68 @@ namespace Game.Core.Application.Periods
             return true;
         }
 
+        public bool TryBuyApartment(out string errorMessage)
+        {
+            errorMessage = string.Empty;
+
+            if (!_current.HasDefinition || !CanEditCurrentState())
+            {
+                errorMessage = "Период недоступен для покупки квартиры.";
+                return false;
+            }
+
+            if (!IsMortgageAvailable(_current.Definition))
+            {
+                errorMessage = "Покупка квартиры пока недоступна.";
+                return false;
+            }
+
+            if (HasOwnedResidence(_current.Definition))
+            {
+                errorMessage = "Квартира уже куплена.";
+                return false;
+            }
+
+            var summary = _current.Summary ?? PeriodCalculationSummary.Empty;
+
+            if (summary.CashBalance + 0.01d < ConsumerCreditMath.MortgagePropertyCost)
+            {
+                errorMessage = $"Для покупки нужно {EcuFormatter.FormatAmount(ConsumerCreditMath.MortgagePropertyCost)} наличными.";
+                return false;
+            }
+
+            var definition = _current.Definition;
+            var nextResidence = BuildResidenceOwnership(
+                _current.PeriodNumber,
+                definition.EconomyContext,
+                ConsumerCreditMath.DirectApartmentPurchaseMode);
+            var nextDefinition = BuildResidenceAwareDefinition(
+                definition,
+                residenceOwnership: nextResidence,
+                replaceResidenceOwnership: true,
+                initialCashBalance: definition.InitialCashBalance - ConsumerCreditMath.MortgagePropertyCost);
+            var nextExpenses = BuildResidenceAwareExpenseStates(_current.Expenses, nextDefinition.ExpenseDefinitions);
+            var nextSummary = _calculationEngine.Recalculate(nextDefinition, nextExpenses, _current.AssetOperations);
+            var nextState = new PeriodRuntimeState(
+                _current.RunId,
+                _current.PeriodNumber,
+                PeriodFlowState.PeriodActive,
+                nextDefinition,
+                nextExpenses,
+                _current.AssetOperations,
+                nextSummary,
+                AssetOperationDialogState.Closed,
+                _current.IsCheckpointSubmitted,
+                "Квартира куплена.",
+                string.Empty,
+                _current.SubmittedAtUtc,
+                true);
+
+            Publish(nextState);
+            PersistCurrentState();
+            return true;
+        }
+
         public bool TrySubmitMortgage(out string errorMessage)
         {
             errorMessage = string.Empty;
@@ -678,6 +779,12 @@ namespace Game.Core.Application.Periods
             if (HasActiveMortgage(_current.Definition.ConsumerCredits))
             {
                 errorMessage = "Активная ипотека уже оформлена.";
+                return false;
+            }
+
+            if (HasOwnedResidence(_current.Definition))
+            {
+                errorMessage = "Квартира уже куплена.";
                 return false;
             }
 
@@ -710,17 +817,24 @@ namespace Game.Core.Application.Periods
                     ConsumerCreditMath.MortgageTermPeriods)
             };
 
-            var nextDefinition = CloneDefinition(
+            var nextResidence = BuildResidenceOwnership(
+                _current.PeriodNumber,
+                definition.EconomyContext,
+                ConsumerCreditMath.MortgageApartmentPurchaseMode);
+            var nextDefinition = BuildResidenceAwareDefinition(
                 definition,
                 consumerCredits: nextCredits,
+                residenceOwnership: nextResidence,
+                replaceResidenceOwnership: true,
                 initialCashBalance: definition.InitialCashBalance - ConsumerCreditMath.MortgageDownPayment);
-            var nextSummary = _calculationEngine.Recalculate(nextDefinition, _current.Expenses, _current.AssetOperations);
+            var nextExpenses = BuildResidenceAwareExpenseStates(_current.Expenses, nextDefinition.ExpenseDefinitions);
+            var nextSummary = _calculationEngine.Recalculate(nextDefinition, nextExpenses, _current.AssetOperations);
             var nextState = new PeriodRuntimeState(
                 _current.RunId,
                 _current.PeriodNumber,
                 PeriodFlowState.PeriodActive,
                 nextDefinition,
-                _current.Expenses,
+                nextExpenses,
                 _current.AssetOperations,
                 nextSummary,
                 AssetOperationDialogState.Closed,
@@ -732,6 +846,26 @@ namespace Game.Core.Application.Periods
 
             Publish(nextState);
             PersistCurrentState();
+            return true;
+        }
+
+        public bool TrySellApartment(out string errorMessage)
+        {
+            errorMessage = string.Empty;
+
+            if (!_current.HasDefinition || !CanEditCurrentState())
+            {
+                errorMessage = "Период недоступен для продажи квартиры.";
+                return false;
+            }
+
+            if (!HasOwnedResidence(_current.Definition))
+            {
+                errorMessage = "Квартира не куплена.";
+                return false;
+            }
+
+            SellApartment();
             return true;
         }
 
@@ -1014,6 +1148,7 @@ namespace Game.Core.Application.Periods
                 carryOverDepositBalance = carryOverDepositBalance,
                 carryOverAccumulatedUje = state.Summary != null ? state.Summary.Uje : 0d,
                 consumerCredits = BuildConsumerCreditSnapshots(state.Definition.ConsumerCredits),
+                residenceOwnership = BuildResidenceOwnershipSnapshot(state.Definition.ResidenceOwnership),
                 expenses = BuildExpenseSnapshots(state.Expenses),
                 assetOperations = BuildOperationSnapshots(state.AssetOperations),
                 isCheckpointSubmitted = state.IsCheckpointSubmitted,
@@ -1398,6 +1533,46 @@ namespace Game.Core.Application.Periods
             return null;
         }
 
+        private void SellApartment()
+        {
+            if (!_current.HasDefinition || !CanEditCurrentState() || !HasOwnedResidence(_current.Definition))
+            {
+                return;
+            }
+
+            var summary = _current.Summary ?? PeriodCalculationSummary.Empty;
+            var salePrice = ConsumerCreditMath.CalculateResidenceCurrentValue(
+                _current.Definition.ResidenceOwnership,
+                _current.Definition.EconomyContext);
+            var nextDefinition = BuildResidenceAwareDefinition(
+                _current.Definition,
+                residenceOwnership: null,
+                replaceResidenceOwnership: true,
+                initialCashBalance: _current.Definition.InitialCashBalance + Math.Max(0d, salePrice));
+            var nextExpenses = BuildResidenceAwareExpenseStates(_current.Expenses, nextDefinition.ExpenseDefinitions);
+            var nextSummary = _calculationEngine.Recalculate(nextDefinition, nextExpenses, _current.AssetOperations);
+            var nextStatus = summary.CashBalance >= 0d
+                ? "Квартира продана."
+                : "Квартира продана. Средства зачислены в наличные.";
+            var nextState = new PeriodRuntimeState(
+                _current.RunId,
+                _current.PeriodNumber,
+                PeriodFlowState.PeriodActive,
+                nextDefinition,
+                nextExpenses,
+                _current.AssetOperations,
+                nextSummary,
+                AssetOperationDialogState.Closed,
+                _current.IsCheckpointSubmitted,
+                nextStatus,
+                string.Empty,
+                _current.SubmittedAtUtc,
+                true);
+
+            Publish(nextState);
+            PersistCurrentState();
+        }
+
         private static string FirstBlockingValidationMessage(PeriodCalculationSummary summary)
         {
             if (summary == null || summary.ValidationIssues == null)
@@ -1743,6 +1918,10 @@ namespace Game.Core.Application.Periods
         private static PeriodRuntimeDefinition CloneDefinition(
             PeriodRuntimeDefinition definition,
             IReadOnlyList<ConsumerCreditContractRuntime> consumerCredits = null,
+            ResidenceOwnershipRuntime residenceOwnership = null,
+            bool replaceResidenceOwnership = false,
+            IReadOnlyList<PeriodExpenseDefinition> expenseDefinitions = null,
+            IReadOnlyList<PeriodAssetDefinition> assetDefinitions = null,
             double? initialCashBalance = null,
             double? initialDepositBalance = null,
             double? accumulatedUje = null,
@@ -1759,8 +1938,8 @@ namespace Game.Core.Application.Periods
             return new PeriodRuntimeDefinition(
                 definition.Meta,
                 definition.InfoBlockValues,
-                definition.ExpenseDefinitions,
-                definition.AssetDefinitions,
+                expenseDefinitions ?? definition.ExpenseDefinitions,
+                assetDefinitions ?? definition.AssetDefinitions,
                 definition.ValidationSettings,
                 new PeriodCalculationSettings(
                     currentIncomeEcu ?? settings.CurrentIncomeEcu,
@@ -1769,9 +1948,245 @@ namespace Game.Core.Application.Periods
                     settings.MaximumUje),
                 economyContext ?? definition.EconomyContext,
                 consumerCredits ?? definition.ConsumerCredits,
+                replaceResidenceOwnership
+                    ? residenceOwnership
+                    : residenceOwnership ?? definition.ResidenceOwnership,
                 initialCashBalance ?? definition.InitialCashBalance,
                 initialDepositBalance ?? definition.InitialDepositBalance,
                 definition.SourceSummary);
+        }
+
+        private static PeriodRuntimeDefinition BuildResidenceAwareDefinition(
+            PeriodRuntimeDefinition definition,
+            IReadOnlyList<ConsumerCreditContractRuntime> consumerCredits = null,
+            ResidenceOwnershipRuntime residenceOwnership = null,
+            bool replaceResidenceOwnership = false,
+            double? initialCashBalance = null,
+            double? initialDepositBalance = null,
+            double? accumulatedUje = null,
+            PeriodEconomyContext economyContext = null,
+            double? currentIncomeEcu = null)
+        {
+            if (definition == null)
+            {
+                return null;
+            }
+
+            var targetResidence = replaceResidenceOwnership
+                ? residenceOwnership
+                : residenceOwnership ?? definition.ResidenceOwnership;
+            return CloneDefinition(
+                definition,
+                consumerCredits: consumerCredits,
+                residenceOwnership: targetResidence,
+                replaceResidenceOwnership: true,
+                expenseDefinitions: BuildResidenceAwareExpenseDefinitions(
+                    definition.ExpenseDefinitions,
+                    definition.EconomyContext,
+                    targetResidence != null),
+                assetDefinitions: BuildResidenceAwareAssetDefinitions(
+                    definition.AssetDefinitions,
+                    targetResidence != null),
+                initialCashBalance: initialCashBalance,
+                initialDepositBalance: initialDepositBalance,
+                accumulatedUje: accumulatedUje,
+                economyContext: economyContext,
+                currentIncomeEcu: currentIncomeEcu);
+        }
+
+        private static IReadOnlyList<PeriodExpenseDefinition> BuildResidenceAwareExpenseDefinitions(
+            IReadOnlyList<PeriodExpenseDefinition> definitions,
+            PeriodEconomyContext economyContext,
+            bool hasOwnedResidence)
+        {
+            var result = new List<PeriodExpenseDefinition>();
+            var hasHousingRent = false;
+
+            if (definitions != null)
+            {
+                for (var index = 0; index < definitions.Count; index++)
+                {
+                    var definition = definitions[index];
+
+                    if (definition == null)
+                    {
+                        continue;
+                    }
+
+                    if (string.Equals(definition.Id, "housing_rent", StringComparison.Ordinal))
+                    {
+                        hasHousingRent = true;
+
+                        if (hasOwnedResidence)
+                        {
+                            continue;
+                        }
+                    }
+
+                    result.Add(definition);
+                }
+            }
+
+            if (!hasOwnedResidence && !hasHousingRent)
+            {
+                result.Insert(Math.Min(1, result.Count), BuildHousingRentExpenseDefinition(economyContext));
+            }
+
+            return result;
+        }
+
+        private static IReadOnlyList<PeriodExpenseState> BuildResidenceAwareExpenseStates(
+            IReadOnlyList<PeriodExpenseState> expenses,
+            IReadOnlyList<PeriodExpenseDefinition> definitions)
+        {
+            var result = new List<PeriodExpenseState>();
+            var hasHousingRent = false;
+            var rentDefinition = FindDefinition(definitions, "housing_rent");
+
+            if (expenses != null)
+            {
+                for (var index = 0; index < expenses.Count; index++)
+                {
+                    var expense = expenses[index];
+
+                    if (expense == null)
+                    {
+                        continue;
+                    }
+
+                    if (string.Equals(expense.ExpenseId, "housing_rent", StringComparison.Ordinal))
+                    {
+                        if (rentDefinition == null)
+                        {
+                            continue;
+                        }
+
+                        hasHousingRent = true;
+                    }
+
+                    result.Add(expense);
+                }
+            }
+
+            if (rentDefinition != null && !hasHousingRent)
+            {
+                var source = rentDefinition.AllowedSources != null && rentDefinition.AllowedSources.Count > 0
+                    ? rentDefinition.AllowedSources[0]
+                    : FundsSourceType.CurrentIncome;
+                result.Add(new PeriodExpenseState("housing_rent", 0d, source));
+            }
+
+            return result;
+        }
+
+        private static IReadOnlyList<PeriodAssetDefinition> BuildResidenceAwareAssetDefinitions(
+            IReadOnlyList<PeriodAssetDefinition> definitions,
+            bool hasOwnedResidence)
+        {
+            var result = new List<PeriodAssetDefinition>();
+            var hasApartment = false;
+
+            if (definitions != null)
+            {
+                for (var index = 0; index < definitions.Count; index++)
+                {
+                    var definition = definitions[index];
+
+                    if (definition == null)
+                    {
+                        continue;
+                    }
+
+                    if (definition.AssetType == PeriodAssetType.Apartment
+                        || string.Equals(definition.Id, ConsumerCreditMath.ApartmentResidenceId, StringComparison.Ordinal))
+                    {
+                        hasApartment = true;
+
+                        if (!hasOwnedResidence)
+                        {
+                            continue;
+                        }
+                    }
+
+                    result.Add(definition);
+                }
+            }
+
+            if (hasOwnedResidence && !hasApartment)
+            {
+                result.Add(new PeriodAssetDefinition(
+                    ConsumerCreditMath.ApartmentResidenceId,
+                    "Квартира",
+                    PeriodAssetType.Apartment,
+                    false,
+                    true,
+                    Array.Empty<FundsSourceType>(),
+                    "Собственное жильё участника."));
+            }
+
+            return result;
+        }
+
+        private static PeriodExpenseDefinition BuildHousingRentExpenseDefinition(PeriodEconomyContext economyContext)
+        {
+            var inflationMultiplier = economyContext != null
+                ? Math.Max(0.0001d, economyContext.ExpenseInflationMultiplier)
+                : 1d;
+            var amount = 20d * inflationMultiplier;
+
+            return new PeriodExpenseDefinition(
+                "housing_rent",
+                "Аренда жилья",
+                true,
+                0d,
+                amount,
+                amount,
+                new[] { FundsSourceType.CurrentIncome, FundsSourceType.Cash },
+                0d,
+                amount,
+                "Обязательная статья периода.");
+        }
+
+        private static ResidenceOwnershipRuntime BuildResidenceOwnership(
+            int periodNumber,
+            PeriodEconomyContext economyContext,
+            string acquisitionMode)
+        {
+            return new ResidenceOwnershipRuntime(
+                ConsumerCreditMath.ApartmentResidenceId,
+                ConsumerCreditMath.MortgagePropertyCost,
+                periodNumber,
+                economyContext != null
+                    ? Math.Max(0.0001d, economyContext.ExpenseInflationMultiplier)
+                    : 1d,
+                acquisitionMode);
+        }
+
+        private static bool HasOwnedResidence(PeriodRuntimeDefinition definition)
+        {
+            return definition != null && definition.ResidenceOwnership != null;
+        }
+
+        private static PeriodExpenseDefinition FindDefinition(
+            IReadOnlyList<PeriodExpenseDefinition> definitions,
+            string expenseId)
+        {
+            if (definitions == null || string.IsNullOrWhiteSpace(expenseId))
+            {
+                return null;
+            }
+
+            for (var index = 0; index < definitions.Count; index++)
+            {
+                var definition = definitions[index];
+
+                if (definition != null && string.Equals(definition.Id, expenseId, StringComparison.Ordinal))
+                {
+                    return definition;
+                }
+            }
+
+            return null;
         }
 
         private static IReadOnlyList<PeriodExpenseState> BuildPostFiringExpenseStates(
@@ -1839,6 +2254,24 @@ namespace Game.Core.Application.Periods
             }
 
             return result;
+        }
+
+        private static ResidenceOwnershipSnapshotDto BuildResidenceOwnershipSnapshot(
+            ResidenceOwnershipRuntime residenceOwnership)
+        {
+            if (residenceOwnership == null)
+            {
+                return null;
+            }
+
+            return new ResidenceOwnershipSnapshotDto
+            {
+                residenceId = residenceOwnership.ResidenceId,
+                purchasePrice = residenceOwnership.PurchasePrice,
+                purchasePeriodNumber = residenceOwnership.PurchasePeriodNumber,
+                purchaseInflationMultiplier = residenceOwnership.PurchaseInflationMultiplier,
+                acquisitionMode = residenceOwnership.AcquisitionMode
+            };
         }
 
         private static bool DefinitionAllowsCash(

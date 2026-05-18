@@ -109,6 +109,7 @@ namespace Game.Core.Application.Periods
                 ValidateExpense(definition, expenseDefinition, state, validationIssues);
             }
 
+            ApplyResidenceOwnershipBonus(definition, ujeBreakdown, ref projectedUjeDelta);
             ApplyDebtPenaltyIfNeeded(definition, cashBalance, ujeBreakdown, ref projectedUjeDelta);
 
             var uje = accumulatedUje + projectedUjeDelta;
@@ -145,7 +146,7 @@ namespace Game.Core.Application.Periods
                     assetDefinition.Title,
                     assetDefinition.AssetType,
                     GetInitialBalance(definition, assetDefinition.AssetType),
-                    GetCurrentBalance(assetDefinition.AssetType, cashBalance, depositBalance),
+                    GetCurrentBalance(definition, assetDefinition.AssetType, cashBalance, depositBalance),
                     assetDefinition.AllowsDeposit,
                     assetDefinition.AllowsWithdraw));
             }
@@ -543,6 +544,29 @@ namespace Game.Core.Application.Periods
             }
         }
 
+        private static void ApplyResidenceOwnershipBonus(
+            PeriodRuntimeDefinition definition,
+            ICollection<UjeBreakdownItem> ujeBreakdown,
+            ref double projectedUjeDelta)
+        {
+            if (definition == null || definition.ResidenceOwnership == null)
+            {
+                return;
+            }
+
+            projectedUjeDelta += ConsumerCreditMath.ApartmentOwnershipUjeBonus;
+
+            if (ujeBreakdown != null)
+            {
+                ujeBreakdown.Add(new UjeBreakdownItem(
+                    "apartment_ownership",
+                    "Собственное жильё",
+                    ConsumerCreditMath.ApartmentOwnershipUjeBonus,
+                    ConsumerCreditMath.ApartmentOwnershipUjeBonus,
+                    1d));
+            }
+        }
+
         private static void ApplyCashOperation(
             PeriodAssetOperationEntry operation,
             ref double cashBalance,
@@ -623,12 +647,24 @@ namespace Game.Core.Application.Periods
                     return definition.InitialCashBalance;
                 case PeriodAssetType.Deposit:
                     return definition.InitialDepositBalance;
+                case PeriodAssetType.Apartment:
+                    if (definition == null || definition.ResidenceOwnership == null)
+                    {
+                        return 0d;
+                    }
+
+                    return definition.ResidenceOwnership.PurchasePeriodNumber >= definition.Meta.PeriodNumber
+                        ? 0d
+                        : ConsumerCreditMath.CalculateResidenceCurrentValue(
+                            definition.ResidenceOwnership,
+                            definition.EconomyContext);
                 default:
                     return 0d;
             }
         }
 
         private static double GetCurrentBalance(
+            PeriodRuntimeDefinition definition,
             PeriodAssetType assetType,
             double cashBalance,
             double depositBalance)
@@ -639,6 +675,10 @@ namespace Game.Core.Application.Periods
                     return cashBalance;
                 case PeriodAssetType.Deposit:
                     return depositBalance;
+                case PeriodAssetType.Apartment:
+                    return ConsumerCreditMath.CalculateResidenceCurrentValue(
+                        definition != null ? definition.ResidenceOwnership : null,
+                        definition != null ? definition.EconomyContext : null);
                 default:
                     return 0d;
             }

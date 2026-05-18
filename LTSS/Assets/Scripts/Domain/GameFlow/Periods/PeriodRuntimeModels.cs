@@ -28,7 +28,8 @@ namespace Game.Domain.GameFlow
     {
         Generic,
         Cash,
-        Deposit
+        Deposit,
+        Apartment
     }
 
     public enum AssetOperationKind
@@ -67,6 +68,29 @@ namespace Game.Domain.GameFlow
             PeriodicPayment = periodicPayment;
             FixedRatePercent = fixedRatePercent;
             RemainingPeriods = remainingPeriods;
+        }
+    }
+
+    public sealed class ResidenceOwnershipRuntime
+    {
+        public string ResidenceId { get; }
+        public double PurchasePrice { get; }
+        public int PurchasePeriodNumber { get; }
+        public double PurchaseInflationMultiplier { get; }
+        public string AcquisitionMode { get; }
+
+        public ResidenceOwnershipRuntime(
+            string residenceId,
+            double purchasePrice,
+            int purchasePeriodNumber,
+            double purchaseInflationMultiplier,
+            string acquisitionMode)
+        {
+            ResidenceId = residenceId ?? string.Empty;
+            PurchasePrice = purchasePrice;
+            PurchasePeriodNumber = purchasePeriodNumber;
+            PurchaseInflationMultiplier = purchaseInflationMultiplier;
+            AcquisitionMode = acquisitionMode ?? string.Empty;
         }
     }
 
@@ -352,6 +376,7 @@ namespace Game.Domain.GameFlow
         public PeriodCalculationSettings CalculationSettings { get; }
         public PeriodEconomyContext EconomyContext { get; }
         public IReadOnlyList<ConsumerCreditContractRuntime> ConsumerCredits { get; }
+        public ResidenceOwnershipRuntime ResidenceOwnership { get; }
         public double InitialCashBalance { get; }
         public double InitialDepositBalance { get; }
         public string SourceSummary { get; }
@@ -365,6 +390,7 @@ namespace Game.Domain.GameFlow
             PeriodCalculationSettings calculationSettings,
             PeriodEconomyContext economyContext,
             IReadOnlyList<ConsumerCreditContractRuntime> consumerCredits,
+            ResidenceOwnershipRuntime residenceOwnership,
             double initialCashBalance,
             double initialDepositBalance,
             string sourceSummary)
@@ -393,6 +419,7 @@ namespace Game.Domain.GameFlow
             ConsumerCredits = consumerCredits != null
                 ? new List<ConsumerCreditContractRuntime>(consumerCredits)
                 : Array.Empty<ConsumerCreditContractRuntime>();
+            ResidenceOwnership = residenceOwnership;
             InitialCashBalance = initialCashBalance;
             InitialDepositBalance = initialDepositBalance;
             SourceSummary = sourceSummary ?? string.Empty;

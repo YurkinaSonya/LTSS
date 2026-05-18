@@ -17,6 +17,8 @@ public class Enums
         AssetOperation,
         InterPeriodBlock,
         ConsumerCredit,
-        Mortgage
+        Mortgage,
+        ApartmentPurchase,
+        ApartmentSale
     }
 }

@@ -49,6 +49,7 @@ public sealed class GameplayPlaceholderScreenController : ScreenController
             OnExpenseSourceChanged,
             OnAssetAction,
             OnConsumerCreditAction,
+            OnApartmentPurchaseAction,
             OnMortgageAction);
     }
 
@@ -85,6 +86,11 @@ public sealed class GameplayPlaceholderScreenController : ScreenController
     private void OnConsumerCreditAction()
     {
         Context.PeriodGameplay?.OpenConsumerCreditDialog();
+    }
+
+    private void OnApartmentPurchaseAction()
+    {
+        Context.PeriodGameplay?.OpenApartmentPurchaseDialog();
     }
 
     private void OnMortgageAction()
