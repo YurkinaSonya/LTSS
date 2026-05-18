@@ -60,6 +60,11 @@ public sealed class SessionFlowStepScreenController : ScreenController
 
         if (viewModel.RendererKind == SessionFlowRendererKind.Survey)
         {
+            if (!_view.TryPrepareSurveySubmission())
+            {
+                return;
+            }
+
             Context.SessionFlow?.SubmitActiveSurvey(_view.CollectAnswers());
             return;
         }

@@ -862,15 +862,18 @@ namespace Game.Core.Application.Session
         public string Id { get; }
         public string Label { get; }
         public bool IsOther { get; }
+        public bool IsCorrect { get; }
 
         public SessionFlowQuestionOptionRuntime(
             string id,
             string label,
-            bool isOther)
+            bool isOther,
+            bool isCorrect)
         {
             Id = id ?? string.Empty;
             Label = label ?? string.Empty;
             IsOther = isOther;
+            IsCorrect = isCorrect;
         }
     }
 
@@ -882,7 +885,35 @@ namespace Game.Core.Application.Session
         public string Description { get; }
         public bool IsRequired { get; }
         public SessionFlowQuestionType Type { get; }
-        public IReadOnlyList<SessionFlowQuestionOptionRuntime> Options { get; }
+        public IReadOnlyList<SessionFlowQuestionOptionRuntime> Options { get; } 
+        public int PageIndex { get; }
+        public string PageCode { get; }
+        public bool IsCheckableChoiceQuestion
+        {
+            get
+            {
+                if (Type != SessionFlowQuestionType.SingleChoice
+                    && Type != SessionFlowQuestionType.MultipleChoice)
+                {
+                    return false;
+                }
+
+                if (Options == null)
+                {
+                    return false;
+                }
+
+                for (var index = 0; index < Options.Count; index++)
+                {
+                    if (Options[index] != null && Options[index].IsCorrect)
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+        }
 
         public SessionFlowQuestionRuntime(
             string id,
@@ -891,7 +922,9 @@ namespace Game.Core.Application.Session
             string description,
             bool isRequired,
             SessionFlowQuestionType type,
-            IReadOnlyList<SessionFlowQuestionOptionRuntime> options)
+            IReadOnlyList<SessionFlowQuestionOptionRuntime> options,
+            int pageIndex,
+            string pageCode)
         {
             Id = id ?? string.Empty;
             Label = label ?? string.Empty;
@@ -902,6 +935,29 @@ namespace Game.Core.Application.Session
             Options = options != null
                 ? new List<SessionFlowQuestionOptionRuntime>(options)
                 : Array.Empty<SessionFlowQuestionOptionRuntime>();
+            PageIndex = pageIndex < 0 ? 0 : pageIndex;
+            PageCode = pageCode ?? string.Empty;
+        }
+
+        public SessionFlowQuestionRuntime(
+            string id,
+            string label,
+            string placeholder,
+            string description,
+            bool isRequired,
+            SessionFlowQuestionType type,
+            IReadOnlyList<SessionFlowQuestionOptionRuntime> options)
+            : this(
+                id,
+                label,
+                placeholder,
+                description,
+                isRequired,
+                type,
+                options,
+                0,
+                string.Empty)
+        {
         }
     }
 

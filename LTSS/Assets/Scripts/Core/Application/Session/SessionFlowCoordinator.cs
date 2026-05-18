@@ -634,7 +634,32 @@ namespace Game.Core.Application.Session
                 return Array.Empty<SessionFlowQuestionRuntime>();
             }
 
-            var questionsNode = template.TemplateDocument.Root.FindFirstDescendantProperty("questions", "items", "fields");
+            var root = template.TemplateDocument.Root;
+
+            if (root.TryGetPropertyIgnoreCase("pages", out var pagesNode)
+                && pagesNode.Kind == JsonValueKind.Array
+                && pagesNode.ArrayValue.Count > 0)
+            {
+                var pagedQuestions = new List<SessionFlowQuestionRuntime>();
+
+                for (var pageIndex = 0; pageIndex < pagesNode.ArrayValue.Count; pageIndex++)
+                {
+                    var pageNode = pagesNode.ArrayValue[pageIndex];
+
+                    if (pageNode == null || pageNode.Kind != JsonValueKind.Object)
+                    {
+                        continue;
+                    }
+
+                    var pageCode = ReadString(pageNode, "code", "id", "key", "name");
+                    var pageQuestionsNode = pageNode.FindFirstProperty("questions", "items", "fields");
+                    AppendSurveyQuestions(pagedQuestions, pageQuestionsNode, pageIndex, pageCode);
+                }
+
+                return pagedQuestions;
+            }
+
+            var questionsNode = root.FindFirstDescendantProperty("questions", "items", "fields");
 
             if (questionsNode.Kind != JsonValueKind.Array)
             {
@@ -676,10 +701,64 @@ namespace Game.Core.Application.Session
                     ReadString(questionNode, "description", "helpText"),
                     ReadBoolean(questionNode, "required", "isRequired", "mandatory") ?? true,
                     questionType,
-                    options));
+                    options,
+                    0,
+                    string.Empty));
             }
 
             return result;
+        }
+
+        private static void AppendSurveyQuestions(
+            List<SessionFlowQuestionRuntime> result,
+            JsonValue questionsNode,
+            int pageIndex,
+            string pageCode)
+        {
+            if (result == null
+                || questionsNode == null
+                || questionsNode.Kind != JsonValueKind.Array)
+            {
+                return;
+            }
+
+            for (var index = 0; index < questionsNode.ArrayValue.Count; index++)
+            {
+                var questionNode = questionsNode.ArrayValue[index];
+
+                if (questionNode == null || questionNode.Kind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                var id = ReadString(questionNode, "id", "code", "key");
+                var label = ReadString(questionNode, "label", "title", "question", "text", "name");
+
+                if (string.IsNullOrWhiteSpace(id))
+                {
+                    id = $"question_{pageIndex + 1}_{index + 1}";
+                }
+
+                if (string.IsNullOrWhiteSpace(label))
+                {
+                    label = $"Ð’Ð¾Ð¿Ñ€Ð¾Ñ {index + 1}";
+                }
+
+                var optionsNode = questionNode.FindFirstProperty("options", "choices", "answers", "variants");
+                var questionType = ResolveQuestionType(questionNode, optionsNode);
+                var options = BuildQuestionOptions(optionsNode);
+
+                result.Add(new SessionFlowQuestionRuntime(
+                    id,
+                    label,
+                    ReadString(questionNode, "placeholder", "hint"),
+                    ReadString(questionNode, "description", "helpText"),
+                    ReadBoolean(questionNode, "required", "isRequired", "mandatory") ?? true,
+                    questionType,
+                    options,
+                    pageIndex,
+                    pageCode));
+            }
         }
 
         private static SessionFlowQuestionType ResolveQuestionType(JsonValue questionNode, JsonValue optionsNode)
@@ -755,7 +834,11 @@ namespace Game.Core.Application.Session
                     var isOther = IsOtherOption(optionNode, rawLabel, string.Empty);
                     var label = isOther ? "Другое" : rawLabel;
                     var optionId = isOther ? "other" : rawLabel;
-                    result.Add(new SessionFlowQuestionOptionRuntime(optionId, label, isOther));
+                    result.Add(new SessionFlowQuestionOptionRuntime(
+                        optionId,
+                        label,
+                        isOther,
+                        false));
                     continue;
                 }
 
@@ -785,7 +868,8 @@ namespace Game.Core.Application.Session
                 result.Add(new SessionFlowQuestionOptionRuntime(
                     optionIdValue,
                     labelValue,
-                    isOtherObject));
+                    isOtherObject,
+                    ReadBoolean(optionNode, "isCorrect", "correct", "isRight", "right") == true));
             }
 
             return result;
