@@ -19,6 +19,14 @@ public sealed class InterPeriodBlockPopup : Popup
     private RectTransform _scrollContent;
     private Text _emptyLabel;
     private Button _primaryButton;
+    private InterPeriodBlockRuntime _activeBlock;
+    private bool _isFiredFlow;
+    private bool _isFiredResolved;
+    private bool _isFiredOutcome;
+    private InputField _firedInput;
+    private Text _firedPromptLabel;
+    private Text _firedSystemNumberLabel;
+    private Text _firedResultLabel;
     private bool _isBuilt;
     private bool _completionHandled;
 
@@ -27,7 +35,7 @@ public sealed class InterPeriodBlockPopup : Popup
     protected override void OnInitialize()
     {
         EnsureBuilt();
-        BindButton(_primaryButton, HandleContinue);
+        BindButton(_primaryButton, HandlePrimaryAction);
         ApplyBlock(ResolveBlock());
     }
 
@@ -113,8 +121,14 @@ public sealed class InterPeriodBlockPopup : Popup
         _primaryButton = RuntimeUiFactory.CreatePrimaryButton(buttonRow, "Понятно");
     }
 
-    private void HandleContinue()
+    private void HandlePrimaryAction()
     {
+        if (_isFiredFlow && !_isFiredResolved)
+        {
+            ResolveFiredOutcome();
+            return;
+        }
+
         if (_completionHandled)
         {
             return;
@@ -151,6 +165,14 @@ public sealed class InterPeriodBlockPopup : Popup
     private void ApplyBlock(InterPeriodBlockRuntime block)
     {
         ClearScrollContent();
+        _activeBlock = block;
+        _isFiredFlow = false;
+        _isFiredResolved = false;
+        _isFiredOutcome = false;
+        _firedInput = null;
+        _firedPromptLabel = null;
+        _firedSystemNumberLabel = null;
+        _firedResultLabel = null;
 
         if (block == null || string.IsNullOrWhiteSpace(block.Id))
         {
@@ -174,6 +196,12 @@ public sealed class InterPeriodBlockPopup : Popup
         if (normalizedType == "news")
         {
             BuildNewsLayout(block);
+            return;
+        }
+
+        if (normalizedType == "fired")
+        {
+            BuildFiredLayout(block);
             return;
         }
 
@@ -256,6 +284,52 @@ public sealed class InterPeriodBlockPopup : Popup
         }
     }
 
+    private void BuildFiredLayout(InterPeriodBlockRuntime block)
+    {
+        _isFiredFlow = true;
+        RuntimeUiFactory.SetButtonText(_primaryButton, "Проверить судьбу");
+
+        var introPanel = RuntimeUiFactory.CreatePanel(
+            "FiredIntroPanel",
+            _scrollContent,
+            new RectOffset(22, 22, 20, 20),
+            12f,
+            RuntimeUiFactory.SurfaceColor);
+        var introText = RuntimeUiFactory.CreateBodyText(
+            introPanel,
+            string.IsNullOrWhiteSpace(ResolveBody(block))
+                ? "Введите число от 1 до 30. После этого система покажет своё число и вы узнаете результат испытания."
+                : ResolveBody(block),
+            TextAnchor.UpperLeft);
+        introText.horizontalOverflow = HorizontalWrapMode.Wrap;
+        introText.verticalOverflow = VerticalWrapMode.Overflow;
+
+        var inputPanel = RuntimeUiFactory.CreatePanel(
+            "FiredInputPanel",
+            _scrollContent,
+            new RectOffset(22, 22, 20, 20),
+            10f,
+            RuntimeUiFactory.SurfaceColor);
+        _firedPromptLabel = RuntimeUiFactory.CreateBodyText(inputPanel, "Введите число от 1 до 30", TextAnchor.UpperLeft);
+        RuntimeUiFactory.ApplyTextStyle(_firedPromptLabel, FontStyle.Bold);
+        _firedInput = RuntimeUiFactory.CreateInputField(inputPanel, "От 1 до 30");
+        _firedInput.contentType = InputField.ContentType.IntegerNumber;
+        _firedInput.lineType = InputField.LineType.SingleLine;
+
+        var resultPanel = RuntimeUiFactory.CreatePanel(
+            "FiredResultPanel",
+            _scrollContent,
+            new RectOffset(22, 22, 20, 20),
+            10f,
+            RuntimeUiFactory.SurfaceColor);
+        _firedSystemNumberLabel = RuntimeUiFactory.CreateBodyText(resultPanel, string.Empty, TextAnchor.UpperLeft);
+        _firedSystemNumberLabel.gameObject.SetActive(false);
+        _firedResultLabel = RuntimeUiFactory.CreateBodyText(resultPanel, string.Empty, TextAnchor.UpperLeft);
+        _firedResultLabel.horizontalOverflow = HorizontalWrapMode.Wrap;
+        _firedResultLabel.verticalOverflow = VerticalWrapMode.Overflow;
+        _firedResultLabel.gameObject.SetActive(false);
+    }
+
     private List<NewsEntry> ExtractNewsEntries(InterPeriodBlockRuntime block)
     {
         var result = new List<NewsEntry>();
@@ -322,6 +396,90 @@ public sealed class InterPeriodBlockPopup : Popup
         }
 
         return result;
+    }
+
+    private void ResolveFiredOutcome()
+    {
+        if (_firedInput == null || _firedResultLabel == null || _firedSystemNumberLabel == null)
+        {
+            return;
+        }
+
+        if (!int.TryParse((_firedInput.text ?? string.Empty).Trim(), out var participantNumber)
+            || participantNumber < 1
+            || participantNumber > 30)
+        {
+            _firedResultLabel.text = "Введите целое число от 1 до 30.";
+            _firedResultLabel.color = RuntimeUiFactory.DangerColor;
+            _firedResultLabel.gameObject.SetActive(true);
+            return;
+        }
+
+        var systemNumber = GenerateSystemNumber(participantNumber, ReadGuaranteedCase(_activeBlock));
+        var participantIsFired = systemNumber == participantNumber;
+
+        _isFiredResolved = true;
+        _isFiredOutcome = participantIsFired;
+        _firedInput.interactable = false;
+        _firedSystemNumberLabel.text = $"Система выбрала число: {systemNumber}";
+        _firedSystemNumberLabel.gameObject.SetActive(true);
+        _firedResultLabel.text = participantIsFired
+            ? "Вас уволили! С этого момента ваш располагаемый доход всегда равен 0."
+            : "Вы успешно избежали увольнения!";
+        _firedResultLabel.color = participantIsFired
+            ? RuntimeUiFactory.DangerColor
+            : RuntimeUiFactory.TextPrimaryColor;
+        _firedResultLabel.gameObject.SetActive(true);
+        RuntimeUiFactory.SetButtonText(_primaryButton, "Продолжить");
+
+        if (participantIsFired)
+        {
+            Context.SessionFlow?.ApplyPermanentIncomeLoss();
+            Context.PeriodGameplay?.ApplyPermanentIncomeLoss();
+        }
+    }
+
+    private static int GenerateSystemNumber(int participantNumber, bool? guaranteedCase)
+    {
+        if (guaranteedCase == true)
+        {
+            var number = UnityEngine.Random.Range(1, 31);
+
+            if (number == participantNumber)
+            {
+                number = participantNumber == 30 ? 29 : participantNumber + 1;
+            }
+
+            return number;
+        }
+
+        if (guaranteedCase == false)
+        {
+            return participantNumber;
+        }
+
+        return UnityEngine.Random.Range(1, 31);
+    }
+
+    private static bool? ReadGuaranteedCase(InterPeriodBlockRuntime block)
+    {
+        var rawNode = block != null ? block.RawNode : JsonValue.Null;
+        var payloadNode = GetObjectCandidate(rawNode, "payload", "content", "data");
+
+        if (TryReadBoolean(payloadNode, "guaranteedCase", out var payloadValue))
+        {
+            return payloadValue;
+        }
+
+        var contentNode = GetObjectCandidate(rawNode, "contentBlock", "content", "block");
+        var nestedPayloadNode = GetObjectCandidate(contentNode, "payload", "content", "data");
+
+        if (TryReadBoolean(nestedPayloadNode, "guaranteedCase", out var nestedValue))
+        {
+            return nestedValue;
+        }
+
+        return null;
     }
 
     private InterPeriodBlockRuntime ResolveBlock()
@@ -571,6 +729,29 @@ public sealed class InterPeriodBlockPopup : Popup
                 value = pair.Value ?? JsonValue.Null;
                 return true;
             }
+        }
+
+        return false;
+    }
+
+    private static bool TryReadBoolean(JsonValue node, string propertyName, out bool value)
+    {
+        value = false;
+
+        if (!TryGetPropertyIgnoreCase(node, propertyName, out var rawValue) || rawValue == null)
+        {
+            return false;
+        }
+
+        if (rawValue.Kind == JsonValueKind.Boolean)
+        {
+            value = rawValue.BooleanValue;
+            return true;
+        }
+
+        if (rawValue.Kind == JsonValueKind.String && bool.TryParse(rawValue.StringValue, out value))
+        {
+            return true;
         }
 
         return false;

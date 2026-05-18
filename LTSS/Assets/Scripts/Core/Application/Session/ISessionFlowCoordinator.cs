@@ -10,6 +10,7 @@ namespace Game.Core.Application.Session
 
         void StartOrResume();
         void CompleteActiveStep();
+        void ApplyPermanentIncomeLoss();
         void SkipActiveStep();
         void SubmitActiveSurvey(IReadOnlyDictionary<string, string> answers);
         void ClearRuntime();

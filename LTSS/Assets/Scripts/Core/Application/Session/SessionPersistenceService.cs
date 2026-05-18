@@ -264,6 +264,7 @@ namespace Game.Core.Application.Session
                 activeStepRequired = activeStep.IsRequired,
                 isPostSessionCompleted = progress.IsPostSessionCompleted,
                 isSessionCompleted = progress.IsSessionCompleted,
+                hasPermanentIncomeLoss = progress.HasPermanentIncomeLoss,
                 savedAtUtc = DateTime.UtcNow.ToString("O"),
                 canRestore = true
             };

@@ -10,15 +10,18 @@ namespace Game.Core.Application.Periods
     public sealed class PeriodRuntimeFactory : IPeriodRuntimeFactory
     {
         private readonly IPeriodCalculationEngine _calculationEngine;
+        private readonly ISessionPersistenceService _persistenceService;
         private readonly IJsonSerializer _serializer;
         private readonly IAppLogger _logger;
 
         public PeriodRuntimeFactory(
             IPeriodCalculationEngine calculationEngine,
+            ISessionPersistenceService persistenceService,
             IJsonSerializer serializer,
             IAppLogger logger)
         {
             _calculationEngine = calculationEngine;
+            _persistenceService = persistenceService;
             _serializer = serializer;
             _logger = logger;
         }
@@ -189,7 +192,8 @@ namespace Game.Core.Application.Periods
             }
 
             var periodStatistics = ResolvePeriodStatistics(clientRuntime, periodNumber);
-            var economyContext = BuildEconomyContext(clientRuntime, periodStatistics, periodNumber);
+            var hasPermanentIncomeLoss = HasPermanentIncomeLoss(clientRuntime, sessionConfigRuntime);
+            var economyContext = BuildEconomyContext(clientRuntime, periodStatistics, periodNumber, hasPermanentIncomeLoss);
             var historicalLabel = !string.IsNullOrWhiteSpace(configuredPeriod.HistoricalYear)
                 ? configuredPeriod.HistoricalYear
                 : !string.IsNullOrWhiteSpace(economyContext.HistoricalYear)
@@ -685,7 +689,8 @@ namespace Game.Core.Application.Periods
         private static PeriodEconomyContext BuildEconomyContext(
             ClientRuntimeState clientRuntime,
             PeriodStatisticsRuntime periodStatistics,
-            int periodNumber)
+            int periodNumber,
+            bool hasPermanentIncomeLoss)
         {
             var baseIncomeEcu = clientRuntime != null
                                 && clientRuntime.HasSession
@@ -731,6 +736,11 @@ namespace Game.Core.Application.Periods
                 }
             }
 
+            if (hasPermanentIncomeLoss)
+            {
+                currentIncomeEcu = 0d;
+            }
+
             var currentInflationMultiplier = 1d + currentInflationRate;
             var cashValueMultiplier = 1d;
             var depositValueMultiplier = 1d;
@@ -748,7 +758,35 @@ namespace Game.Core.Application.Periods
                 expenseInflationMultiplier,
                 currentInflationMultiplier,
                 cashValueMultiplier,
-                depositValueMultiplier);
+                depositValueMultiplier,
+                hasPermanentIncomeLoss);
+        }
+
+        private bool HasPermanentIncomeLoss(ClientRuntimeState clientRuntime, SessionConfigRuntime sessionConfigRuntime)
+        {
+            if (_persistenceService == null
+                || clientRuntime == null
+                || !clientRuntime.HasSession
+                || !_persistenceService.TryLoadSessionFlowProgress(out var snapshot)
+                || snapshot == null)
+            {
+                return false;
+            }
+
+            if (!string.Equals(snapshot.runId, clientRuntime.AuthenticatedRun.RunId, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            if (clientRuntime.Bootstrap == null
+                || clientRuntime.Bootstrap.Session == null
+                || snapshot.sessionConfigVersion != clientRuntime.Bootstrap.Session.ConfigVersion)
+            {
+                return false;
+            }
+
+            return snapshot.schemaVersion == (sessionConfigRuntime != null ? sessionConfigRuntime.SchemaVersion : 0)
+                && snapshot.hasPermanentIncomeLoss;
         }
 
         private static double NormalizePercentageToRate(double? rawPercent)

@@ -22,6 +22,7 @@ namespace Game.Core.Application.Session
         public bool activeStepRequired;
         public bool isPostSessionCompleted;
         public bool isSessionCompleted;
+        public bool hasPermanentIncomeLoss;
         public string savedAtUtc;
         public bool canRestore;
 
@@ -43,7 +44,8 @@ namespace Game.Core.Application.Session
                     activeStepTitle,
                     activeStepRequired),
                 isPostSessionCompleted,
-                isSessionCompleted);
+                isSessionCompleted,
+                hasPermanentIncomeLoss);
         }
 
         private static SessionFlowStepScope ToScope(string rawValue)

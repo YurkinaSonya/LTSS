@@ -144,7 +144,8 @@ namespace Game.Domain.GameFlow
             1d,
             1d,
             1d,
-            1d);
+            1d,
+            false);
 
         public int CurrentPeriodNumber { get; }
         public string HistoricalYear { get; }
@@ -159,6 +160,7 @@ namespace Game.Domain.GameFlow
         public double CurrentInflationMultiplier { get; }
         public double CashValueMultiplier { get; }
         public double DepositValueMultiplier { get; }
+        public bool HasPermanentIncomeLoss { get; }
 
         public PeriodEconomyContext(
             int currentPeriodNumber,
@@ -173,7 +175,8 @@ namespace Game.Domain.GameFlow
             double expenseInflationMultiplier,
             double currentInflationMultiplier,
             double cashValueMultiplier,
-            double depositValueMultiplier)
+            double depositValueMultiplier,
+            bool hasPermanentIncomeLoss)
         {
             CurrentPeriodNumber = currentPeriodNumber;
             HistoricalYear = historicalYear ?? string.Empty;
@@ -188,6 +191,7 @@ namespace Game.Domain.GameFlow
             CurrentInflationMultiplier = currentInflationMultiplier;
             CashValueMultiplier = cashValueMultiplier;
             DepositValueMultiplier = depositValueMultiplier;
+            HasPermanentIncomeLoss = hasPermanentIncomeLoss;
         }
     }
 

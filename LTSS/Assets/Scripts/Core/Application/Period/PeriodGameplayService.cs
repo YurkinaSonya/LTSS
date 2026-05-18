@@ -541,6 +541,21 @@ namespace Game.Core.Application.Periods
             _popupNavigation?.Pop("asset_operation_close");
         }
 
+        public void ApplyPermanentIncomeLoss()
+        {
+            if (_current == null
+                || !_current.HasDefinition
+                || (_current.Definition.EconomyContext != null
+                    && _current.Definition.EconomyContext.HasPermanentIncomeLoss))
+            {
+                return;
+            }
+
+            var nextState = WithPermanentIncomeLoss(_current);
+            Publish(nextState.With(statusMessage: "Располагаемый доход обнулён.", lastError: string.Empty));
+            PersistCurrentState();
+        }
+
         public void SubmitPeriod()
         {
             if (!_current.HasDefinition || _current.IsCheckpointSubmitted || !CanEditCurrentState())
@@ -801,7 +816,7 @@ namespace Game.Core.Application.Periods
                 hasPersistedCarryOverBalances = state.Summary != null,
                 hasPersistedCarryOverAccumulatedUje = state.Summary != null,
                 carryOverTargetPeriodNumber = state.PeriodNumber + 1,
-                carryOverCashBalance = state.Summary != null ? Math.Max(0d, state.Summary.CashBalance) : 0d,
+                carryOverCashBalance = state.Summary != null ? state.Summary.CashBalance : 0d,
                 carryOverDepositBalance = carryOverDepositBalance,
                 carryOverAccumulatedUje = state.Summary != null ? state.Summary.Uje : 0d,
                 expenses = BuildExpenseSnapshots(state.Expenses),
@@ -1025,6 +1040,11 @@ namespace Game.Core.Application.Periods
                 return true;
             }
 
+            if (CanUseDebtForExpense(definition, targetSource))
+            {
+                return true;
+            }
+
             var availableAmount = ResolveAvailableAmountForExpense(expenseState, targetSource);
 
             if (targetAmount <= availableAmount + 0.01d)
@@ -1034,6 +1054,17 @@ namespace Game.Core.Application.Periods
 
             validationMessage = BuildExpenseSourceValidationMessage(definition, targetSource, availableAmount);
             return false;
+        }
+
+        private bool CanUseDebtForExpense(PeriodExpenseDefinition definition, FundsSourceType targetSource)
+        {
+            return definition != null
+                && definition.IsRequired
+                && targetSource == FundsSourceType.Cash
+                && _current != null
+                && _current.HasDefinition
+                && _current.Definition.EconomyContext != null
+                && _current.Definition.EconomyContext.HasPermanentIncomeLoss;
         }
 
         private double ResolveAvailableAmountForExpense(PeriodExpenseState expenseState, FundsSourceType targetSource)
@@ -1238,7 +1269,7 @@ namespace Game.Core.Application.Periods
         {
             _pendingCarryOverRunId = runId ?? string.Empty;
             _pendingCarryOverTargetPeriodNumber = targetPeriodNumber > 0 ? targetPeriodNumber : 0;
-            _pendingCarryOverCashBalance = summary != null ? Math.Max(0d, summary.CashBalance) : 0d;
+            _pendingCarryOverCashBalance = summary != null ? summary.CashBalance : 0d;
             _pendingCarryOverDepositBalance = ResolveCarryOverDepositBalance(_current, summary);
             _pendingCarryOverAccumulatedUje = summary != null ? summary.Uje : 0d;
         }
@@ -1372,7 +1403,7 @@ namespace Game.Core.Application.Periods
                 return false;
             }
 
-            cashBalance = Math.Max(0d, dto.carryOverCashBalance);
+            cashBalance = dto.carryOverCashBalance;
             depositBalance = Math.Max(0d, dto.carryOverDepositBalance);
             accumulatedUje = dto.carryOverAccumulatedUje;
             return true;
@@ -1397,7 +1428,7 @@ namespace Game.Core.Application.Periods
                     accumulatedUje,
                     currentDefinition.CalculationSettings.MaximumUje),
                 currentDefinition.EconomyContext,
-                Math.Max(0d, cashBalance),
+                cashBalance,
                 Math.Max(0d, depositBalance),
                 currentDefinition.SourceSummary);
             var nextSummary = _calculationEngine.Recalculate(
@@ -1419,6 +1450,142 @@ namespace Game.Core.Application.Periods
                 state.LastError,
                 state.SubmittedAtUtc,
                 state.HasPendingLocalChanges);
+        }
+
+        private PeriodRuntimeState WithPermanentIncomeLoss(PeriodRuntimeState state)
+        {
+            if (state == null || !state.HasDefinition)
+            {
+                return state;
+            }
+
+            var currentDefinition = state.Definition;
+            var currentEconomy = currentDefinition.EconomyContext ?? PeriodEconomyContext.Empty;
+            var nextEconomy = new PeriodEconomyContext(
+                currentEconomy.CurrentPeriodNumber,
+                currentEconomy.HistoricalYear,
+                currentEconomy.NominalIncomeGrowth,
+                currentEconomy.Inflation,
+                currentEconomy.DepositRate,
+                currentEconomy.CreditRate,
+                currentEconomy.MortgageRate,
+                currentEconomy.BaseIncomeEcu,
+                0d,
+                currentEconomy.ExpenseInflationMultiplier,
+                currentEconomy.CurrentInflationMultiplier,
+                currentEconomy.CashValueMultiplier,
+                currentEconomy.DepositValueMultiplier,
+                true);
+            var nextDefinition = new PeriodRuntimeDefinition(
+                currentDefinition.Meta,
+                currentDefinition.InfoBlockValues,
+                currentDefinition.ExpenseDefinitions,
+                currentDefinition.AssetDefinitions,
+                currentDefinition.ValidationSettings,
+                new PeriodCalculationSettings(
+                    0d,
+                    currentDefinition.CalculationSettings.BaseIncomeEcu,
+                    currentDefinition.CalculationSettings.BaseUje,
+                    currentDefinition.CalculationSettings.MaximumUje),
+                nextEconomy,
+                currentDefinition.InitialCashBalance,
+                currentDefinition.InitialDepositBalance,
+                currentDefinition.SourceSummary);
+            var nextExpenses = BuildPostFiringExpenseStates(state.Expenses, currentDefinition.ExpenseDefinitions);
+            var nextSummary = _calculationEngine.Recalculate(
+                nextDefinition,
+                nextExpenses,
+                state.AssetOperations);
+
+            return new PeriodRuntimeState(
+                state.RunId,
+                state.PeriodNumber,
+                state.FlowState,
+                nextDefinition,
+                nextExpenses,
+                state.AssetOperations,
+                nextSummary,
+                state.AssetDialog,
+                state.IsCheckpointSubmitted,
+                state.StatusMessage,
+                state.LastError,
+                state.SubmittedAtUtc,
+                state.HasPendingLocalChanges);
+        }
+
+        private static IReadOnlyList<PeriodExpenseState> BuildPostFiringExpenseStates(
+            IReadOnlyList<PeriodExpenseState> expenses,
+            IReadOnlyList<PeriodExpenseDefinition> definitions)
+        {
+            if (expenses == null || expenses.Count == 0)
+            {
+                return Array.Empty<PeriodExpenseState>();
+            }
+
+            var result = new List<PeriodExpenseState>(expenses.Count);
+
+            for (var index = 0; index < expenses.Count; index++)
+            {
+                var expenseState = expenses[index];
+
+                if (expenseState == null)
+                {
+                    continue;
+                }
+
+                var nextSource = expenseState.Source;
+
+                if (nextSource == FundsSourceType.CurrentIncome
+                    && DefinitionAllowsCash(definitions, expenseState.ExpenseId))
+                {
+                    nextSource = FundsSourceType.Cash;
+                }
+
+                result.Add(nextSource == expenseState.Source
+                    ? expenseState
+                    : expenseState.With(source: nextSource));
+            }
+
+            return result;
+        }
+
+        private static bool DefinitionAllowsCash(
+            IReadOnlyList<PeriodExpenseDefinition> definitions,
+            string expenseId)
+        {
+            if (definitions == null || string.IsNullOrWhiteSpace(expenseId))
+            {
+                return false;
+            }
+
+            for (var index = 0; index < definitions.Count; index++)
+            {
+                var definition = definitions[index];
+
+                if (definition == null || !string.Equals(definition.Id, expenseId, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var allowedSources = definition.AllowedSources;
+
+                if (allowedSources == null)
+                {
+                    return false;
+                }
+
+                for (var sourceIndex = 0; sourceIndex < allowedSources.Count; sourceIndex++)
+                {
+                    if (allowedSources[sourceIndex] == FundsSourceType.Cash)
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            return false;
         }
     }
 }

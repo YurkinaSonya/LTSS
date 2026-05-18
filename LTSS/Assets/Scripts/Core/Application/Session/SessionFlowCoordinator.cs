@@ -127,6 +127,32 @@ namespace Game.Core.Application.Session
                 string.Empty);
         }
 
+        public void ApplyPermanentIncomeLoss()
+        {
+            var clientRuntime = _sessionCoordinator != null
+                ? _sessionCoordinator.CurrentRuntime
+                : ClientRuntimeState.Empty;
+
+            if (_current == null
+                || _current.Progress == null
+                || _current.Progress.HasPermanentIncomeLoss
+                || clientRuntime == null
+                || !clientRuntime.HasSession)
+            {
+                return;
+            }
+
+            var nextProgress = _current.Progress.WithPermanentIncomeLoss(true);
+            PersistProgress(clientRuntime, _current.Config, nextProgress);
+            Publish(new SessionFlowRuntimeState(
+                _current.Config,
+                nextProgress,
+                _current.ActiveStepView,
+                _current.StatusMessage,
+                _current.LastError,
+                _current.IsCompleted));
+        }
+
         public void SkipActiveStep()
         {
             var activeView = _current != null ? _current.ActiveStepView : SessionFlowStepViewModel.Empty;

@@ -16,6 +16,7 @@ namespace Game.Core.Application.Periods
         private const double HolidayBase = 10d;
         private const double HolidayBonusUje = 15d;
         private const double LeisureZeroSpendPenalty = -10d;
+        private const double DebtUjePenaltyRate = 0.5d;
 
         public PeriodCalculationSummary Recalculate(
             PeriodRuntimeDefinition definition,
@@ -107,6 +108,8 @@ namespace Game.Core.Application.Periods
 
                 ValidateExpense(definition, expenseDefinition, state, validationIssues);
             }
+
+            ApplyDebtPenaltyIfNeeded(definition, cashBalance, ujeBreakdown, ref projectedUjeDelta);
 
             var uje = accumulatedUje + projectedUjeDelta;
 
@@ -480,7 +483,11 @@ namespace Game.Core.Application.Periods
                 return;
             }
 
-            if (cashBalance < -tolerance)
+            var allowDebt = definition != null
+                && definition.EconomyContext != null
+                && definition.EconomyContext.HasPermanentIncomeLoss;
+
+            if (!allowDebt && cashBalance < -tolerance)
             {
                 issues.Add(new PeriodValidationIssue(
                     "cash_negative",
@@ -496,6 +503,35 @@ namespace Game.Core.Application.Periods
                     "На депозите недостаточно средств.",
                     "asset.deposit",
                     true));
+            }
+        }
+
+        private static void ApplyDebtPenaltyIfNeeded(
+            PeriodRuntimeDefinition definition,
+            double cashBalance,
+            ICollection<UjeBreakdownItem> ujeBreakdown,
+            ref double projectedUjeDelta)
+        {
+            if (definition == null
+                || definition.EconomyContext == null
+                || !definition.EconomyContext.HasPermanentIncomeLoss
+                || cashBalance >= -ComparisonTolerance)
+            {
+                return;
+            }
+
+            var debtAmount = Math.Abs(cashBalance);
+            var penalty = -debtAmount * DebtUjePenaltyRate;
+            projectedUjeDelta += penalty;
+
+            if (ujeBreakdown != null)
+            {
+                ujeBreakdown.Add(new UjeBreakdownItem(
+                    "debt_penalty",
+                    "Штраф за долг",
+                    penalty,
+                    0d,
+                    debtAmount));
             }
         }
 

@@ -17,6 +17,7 @@ namespace Game.Core.Application.Periods
         void CycleAssetDialogSource();
         void SubmitAssetDialog(string rawAmount);
         void CloseAssetDialog();
+        void ApplyPermanentIncomeLoss();
         void SubmitPeriod();
         void ClearRuntime();
     }

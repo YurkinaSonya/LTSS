@@ -47,6 +47,13 @@ namespace Game.Core.Application.Navigation
 
             var topPopup = currentState.PopupStack[currentState.PopupCount - 1];
 
+            if (topPopup != null
+                && topPopup.Type == Enums.PopupType.InterPeriodBlock
+                && !string.Equals(source, "inter_period_block_continue", System.StringComparison.Ordinal))
+            {
+                return;
+            }
+
             _stateStore.SetState(state => state.PopPopup());
 
             var metadata = BuildMetadata(topPopup);
