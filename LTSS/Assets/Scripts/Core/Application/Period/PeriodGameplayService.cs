@@ -636,49 +636,83 @@ namespace Game.Core.Application.Periods
                         if (hasNextPeriod)
                         {
                             StorePendingCarryOver(_current.RunId, nextPeriodNumber, summary);
-                            _sessionCoordinator?.UpdateLocalRunProgress(nextPeriodNumber, RunLifecycleStatus.InProgress);
-                        }
+                            var syncingState = _current.With(
+                                flowState: PeriodFlowState.PeriodCheckpointSubmitting,
+                                summary: summary,
+                                isCheckpointSubmitted: true,
+                                statusMessage: "Синхронизация следующего периода...",
+                                lastError: string.Empty,
+                                submittedAtUtc: submittedAt,
+                                hasPendingLocalChanges: false);
 
-                        Publish(_current.With(
-                            flowState: PeriodFlowState.PeriodClosed,
-                            isCheckpointSubmitted: true,
-                            statusMessage: "Период сохранён.",
-                            lastError: string.Empty,
-                            submittedAtUtc: submittedAt,
-                            hasPendingLocalChanges: false));
-                        PersistCurrentState();
+                            Publish(syncingState);
+                            PersistState(syncingState);
 
-                        _logger.Info($"Checkpoint submit succeeded for run '{clientRuntime.AuthenticatedRun.RunId}', period {_current.PeriodNumber}.");
-                        _userActionLogger.Log(
-                            UserActionType.Interaction,
-                            "period_checkpoint_submit_succeeded",
-                            BuildPeriodMetadata(_current));
-
-                        if (hasNextPeriod)
-                        {
-                            var nextPeriodActivated = _current.HasDefinition
-                                && _current.PeriodNumber == nextPeriodNumber
-                                && (_current.FlowState == PeriodFlowState.PeriodIntro
-                                    || _current.FlowState == PeriodFlowState.PeriodActive
-                                    || _current.FlowState == PeriodFlowState.PeriodValidation);
-
-                            _persistenceService?.ClearPeriodSnapshot();
-
-                            if (!nextPeriodActivated)
+                            if (_sessionCoordinator != null)
                             {
-                                ActivateCurrentPeriod();
+                                _sessionCoordinator.RefreshBootstrapInPlace((refreshSucceeded, refreshError) =>
+                                {
+                                    if (!refreshSucceeded)
+                                    {
+                                        _logger.Warning(
+                                            $"Bootstrap refresh after checkpoint failed for run '{clientRuntime.AuthenticatedRun.RunId}', period {submittedPeriodNumber}. {refreshError}");
+                                    }
+
+                                    _sessionCoordinator.UpdateLocalRunProgress(nextPeriodNumber, RunLifecycleStatus.InProgress);
+
+                                    var closedState = syncingState.With(
+                                        flowState: PeriodFlowState.PeriodClosed,
+                                        statusMessage: "Период сохранён.");
+
+                                    PersistState(closedState);
+                                    Publish(closedState);
+
+                                    _logger.Info($"Checkpoint submit succeeded for run '{clientRuntime.AuthenticatedRun.RunId}', period {submittedPeriodNumber}.");
+                                    _userActionLogger.Log(
+                                        UserActionType.Interaction,
+                                        "period_checkpoint_submit_succeeded",
+                                        BuildPeriodMetadata(closedState));
+                                });
+                            }
+                            else
+                            {
+                                _logger.Warning(
+                                    $"Session coordinator is unavailable after checkpoint for run '{clientRuntime.AuthenticatedRun.RunId}', period {submittedPeriodNumber}. Local progress fallback will be used.");
+                                _sessionCoordinator?.UpdateLocalRunProgress(nextPeriodNumber, RunLifecycleStatus.InProgress);
+
+                                var closedState = syncingState.With(
+                                    flowState: PeriodFlowState.PeriodClosed,
+                                    statusMessage: "Период сохранён.");
+
+                                PersistState(closedState);
+                                Publish(closedState);
+
+                                _logger.Info($"Checkpoint submit succeeded for run '{clientRuntime.AuthenticatedRun.RunId}', period {submittedPeriodNumber}.");
+                                _userActionLogger.Log(
+                                    UserActionType.Interaction,
+                                    "period_checkpoint_submit_succeeded",
+                                    BuildPeriodMetadata(closedState));
                             }
 
                             return;
                         }
 
-                        _persistenceService?.ClearPeriodSnapshot();
-                        Publish(_current.With(
-                            statusMessage: hasNextPeriod
-                                ? "Период сохранён. Подготовка следующего шага..."
-                                : "Период сохранён. Завершение сценария...",
-                            lastError: string.Empty));
-                        PersistCurrentState();
+                        var completedState = _current.With(
+                            flowState: PeriodFlowState.PeriodClosed,
+                            summary: summary,
+                            isCheckpointSubmitted: true,
+                            statusMessage: "Период сохранён. Завершение сценария...",
+                            lastError: string.Empty,
+                            submittedAtUtc: submittedAt,
+                            hasPendingLocalChanges: false);
+                        PersistState(completedState);
+                        Publish(completedState);
+
+                        _logger.Info($"Checkpoint submit succeeded for run '{clientRuntime.AuthenticatedRun.RunId}', period {submittedPeriodNumber}.");
+                        _userActionLogger.Log(
+                            UserActionType.Interaction,
+                            "period_checkpoint_submit_succeeded",
+                            BuildPeriodMetadata(completedState));
                         return;
                     }
 
@@ -742,36 +776,41 @@ namespace Game.Core.Application.Periods
 
         private void PersistCurrentState()
         {
-            if (_persistenceService == null || !_current.HasDefinition)
+            PersistState(_current);
+        }
+
+        private void PersistState(PeriodRuntimeState state)
+        {
+            if (_persistenceService == null || state == null || !state.HasDefinition)
             {
                 return;
             }
 
             var dto = new PeriodRuntimeSnapshotDto
             {
-                runId = _current.RunId,
-                periodNumber = _current.PeriodNumber,
-                flowState = PeriodContractMapper.ToPeriodFlowStateCode(_current.FlowState),
+                runId = state.RunId,
+                periodNumber = state.PeriodNumber,
+                flowState = PeriodContractMapper.ToPeriodFlowStateCode(state.FlowState),
                 hasPersistedInitialBalances = true,
                 hasPersistedAccumulatedUje = true,
-                initialCashBalance = _current.Definition.InitialCashBalance,
-                initialDepositBalance = _current.Definition.InitialDepositBalance,
-                accumulatedUje = _current.Definition.CalculationSettings.BaseUje,
-                expenses = BuildExpenseSnapshots(_current.Expenses),
-                assetOperations = BuildOperationSnapshots(_current.AssetOperations),
-                isCheckpointSubmitted = _current.IsCheckpointSubmitted,
-                statusMessage = _current.StatusMessage,
-                lastError = _current.LastError,
-                submittedAtUtc = _current.SubmittedAtUtc,
-                hasPendingLocalChanges = _current.HasPendingLocalChanges
+                initialCashBalance = state.Definition.InitialCashBalance,
+                initialDepositBalance = state.Definition.InitialDepositBalance,
+                accumulatedUje = state.Definition.CalculationSettings.BaseUje,
+                expenses = BuildExpenseSnapshots(state.Expenses),
+                assetOperations = BuildOperationSnapshots(state.AssetOperations),
+                isCheckpointSubmitted = state.IsCheckpointSubmitted,
+                statusMessage = state.StatusMessage,
+                lastError = state.LastError,
+                submittedAtUtc = state.SubmittedAtUtc,
+                hasPendingLocalChanges = state.HasPendingLocalChanges
             };
 
             _persistenceService.SavePeriodSnapshot(
-                _current.RunId,
-                _current.PeriodNumber,
+                state.RunId,
+                state.PeriodNumber,
                 dto.flowState,
                 _serializer.Serialize(dto),
-                _current.IsCheckpointSubmitted);
+                state.IsCheckpointSubmitted);
         }
 
         private static PeriodExpenseStateSnapshotDto[] BuildExpenseSnapshots(IReadOnlyList<PeriodExpenseState> expenses)

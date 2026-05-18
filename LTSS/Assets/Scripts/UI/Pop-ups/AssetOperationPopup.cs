@@ -111,12 +111,16 @@ public sealed class AssetOperationPopup : Popup
 
     private void ApplyRuntime(PeriodRuntimeState runtimeState)
     {
-        if (!_isBuilt || runtimeState == null)
+        var latestRuntime = Context != null && Context.PeriodGameplay != null
+            ? Context.PeriodGameplay.Current
+            : runtimeState;
+
+        if (!_isBuilt || latestRuntime == null)
         {
             return;
         }
 
-        var dialog = runtimeState.AssetDialog;
+        var dialog = latestRuntime.AssetDialog;
 
         if (dialog == null || !dialog.IsOpen)
         {
@@ -150,7 +154,7 @@ public sealed class AssetOperationPopup : Popup
         }
 
         _limitLabel.text = $"Доступно: {EcuFormatter.FormatAmount(dialog.MaxAmount)}";
-        SetMessage(runtimeState.StatusMessage);
+        SetMessage(latestRuntime.StatusMessage);
 
         if (_amountInput != null && string.IsNullOrWhiteSpace(_amountInput.text) && dialog.SuggestedAmount > 0d)
         {

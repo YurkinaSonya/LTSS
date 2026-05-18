@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
+using System.Text.RegularExpressions;
 using Game.Core.Application;
 using Game.Core.Application.Session;
 using Game.Core.Application.UI;
@@ -20,6 +22,7 @@ public sealed class SessionFlowStepScreenView : ScreenView
     private string _lastStepKey = string.Empty;
     private readonly Dictionary<string, InputField> _questionInputs =
         new Dictionary<string, InputField>();
+    private static readonly Regex BoldRegex = new Regex(@"\*\*(.+?)\*\*", RegexOptions.Compiled);
 
     public override ScreenController Construct(UIContext context)
     {
@@ -53,7 +56,7 @@ public sealed class SessionFlowStepScreenView : ScreenView
         _titleLabel.text = title;
         _subtitleLabel.text = viewModel.Subtitle ?? string.Empty;
         _subtitleLabel.gameObject.SetActive(!string.IsNullOrWhiteSpace(_subtitleLabel.text));
-        _bodyLabel.text = viewModel.Body ?? string.Empty;
+        _bodyLabel.text = FormatSimpleMarkdown(viewModel.Body);
         _statusLabel.text = !string.IsNullOrWhiteSpace(flowState != null ? flowState.LastError : string.Empty)
             ? flowState.LastError
             : flowState != null
@@ -131,6 +134,7 @@ public sealed class SessionFlowStepScreenView : ScreenView
             RuntimeUiFactory.SurfaceColor);
         _bodyLabel = RuntimeUiFactory.CreateBodyText(bodyPanel, string.Empty);
         _bodyLabel.alignment = TextAnchor.UpperLeft;
+        _bodyLabel.supportRichText = true;
         _bodyLabel.horizontalOverflow = HorizontalWrapMode.Wrap;
         _bodyLabel.verticalOverflow = VerticalWrapMode.Overflow;
 
@@ -223,5 +227,116 @@ public sealed class SessionFlowStepScreenView : ScreenView
         {
             button.onClick.AddListener(() => callback.Invoke());
         }
+    }
+
+    private static string FormatSimpleMarkdown(string rawText)
+    {
+        if (string.IsNullOrWhiteSpace(rawText))
+        {
+            return string.Empty;
+        }
+
+        var normalized = rawText.Replace("\r\n", "\n").Replace('\r', '\n');
+        var lines = normalized.Split('\n');
+        var builder = new StringBuilder();
+
+        for (var index = 0; index < lines.Length; index++)
+        {
+            var line = lines[index] ?? string.Empty;
+            var trimmed = line.Trim();
+
+            if (trimmed.Length == 0)
+            {
+                if (builder.Length > 0 && !EndsWithDoubleLineBreak(builder))
+                {
+                    builder.Append("\n\n");
+                }
+
+                continue;
+            }
+
+            if (TryAppendHeading(builder, trimmed))
+            {
+                continue;
+            }
+
+            if (IsBulletLine(trimmed))
+            {
+                builder.Append("• ");
+                builder.Append(FormatInline(trimmed.Substring(2).Trim()));
+                builder.Append('\n');
+                continue;
+            }
+
+            builder.Append(FormatInline(trimmed));
+
+            if (index < lines.Length - 1)
+            {
+                builder.Append('\n');
+            }
+        }
+
+        return builder.ToString().Trim();
+    }
+
+    private static bool TryAppendHeading(StringBuilder builder, string line)
+    {
+        var level = 0;
+
+        while (level < line.Length && line[level] == '#')
+        {
+            level++;
+        }
+
+        if (level == 0 || level >= line.Length || line[level] != ' ')
+        {
+            return false;
+        }
+
+        var text = line.Substring(level + 1).Trim();
+
+        if (text.Length == 0)
+        {
+            return false;
+        }
+
+        var size = level <= 1
+            ? 24
+            : level == 2
+                ? 21
+                : 19;
+
+        builder.Append("<b><size=");
+        builder.Append(size);
+        builder.Append('>');
+        builder.Append(FormatInline(text));
+        builder.Append("</size></b>\n");
+        return true;
+    }
+
+    private static bool IsBulletLine(string line)
+    {
+        return line.StartsWith("- ") || line.StartsWith("* ");
+    }
+
+    private static string FormatInline(string text)
+    {
+        var escaped = EscapeRichText(text ?? string.Empty);
+        return BoldRegex.Replace(escaped, "<b>$1</b>");
+    }
+
+    private static string EscapeRichText(string value)
+    {
+        return value
+            .Replace("&", "&amp;")
+            .Replace("<", "&lt;")
+            .Replace(">", "&gt;");
+    }
+
+    private static bool EndsWithDoubleLineBreak(StringBuilder builder)
+    {
+        return builder.Length >= 2
+               && builder[builder.Length - 1] == '\n'
+               && builder[builder.Length - 2] == '\n';
     }
 }

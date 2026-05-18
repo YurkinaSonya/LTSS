@@ -160,7 +160,14 @@ namespace Game.Core.Application.Session
 
                 var rawType = ReadString(node, "type", "stepType", "kind", "contentType");
                 var type = ParseStepType(rawType);
+                var contentNode = ResolveContentNode(node);
                 var title = ReadString(node, "title", "label", "name", "heading");
+
+                if (string.IsNullOrWhiteSpace(title) && contentNode.Kind == JsonValueKind.Object)
+                {
+                    title = ReadString(contentNode, "title", "label", "name", "heading");
+                }
+
                 var stepId = BuildKey(prefix, index, ReadString(node, "id", "code", "key", "internalCode", "ref"));
                 var surveyRef = ParseSurveyRef(node.FindFirstProperty("surveyRef", "survey", "surveyTemplate", "template"));
 
@@ -174,8 +181,8 @@ namespace Game.Core.Application.Session
                     stepId,
                     type,
                     title,
-                    ReadString(node, "subtitle", "summary", "caption"),
-                    ReadBody(node),
+                    ReadStepSubtitle(node, contentNode),
+                    ReadStepBody(node, contentNode),
                     ReadBoolean(node, "required", "isRequired", "mandatory") ?? true,
                     ReadString(node, "internalCode", "code"),
                     surveyRef,
@@ -499,6 +506,44 @@ namespace Game.Core.Application.Session
             }
         }
 
+        private static JsonValue ResolveContentNode(JsonValue node)
+        {
+            if (node == null || node.Kind != JsonValueKind.Object)
+            {
+                return JsonValue.Null;
+            }
+
+            return node.GetObjectCandidate("contentBlock", "content", "block");
+        }
+
+        private static string ReadStepSubtitle(JsonValue node, JsonValue contentNode)
+        {
+            var subtitle = ReadString(node, "subtitle", "summary", "caption");
+
+            if (!string.IsNullOrWhiteSpace(subtitle))
+            {
+                return subtitle;
+            }
+
+            return contentNode != null && contentNode.Kind == JsonValueKind.Object
+                ? ReadString(contentNode, "subtitle", "summary", "caption")
+                : string.Empty;
+        }
+
+        private static string ReadStepBody(JsonValue node, JsonValue contentNode)
+        {
+            var body = ReadBody(node);
+
+            if (!string.IsNullOrWhiteSpace(body))
+            {
+                return body;
+            }
+
+            return contentNode != null && contentNode.Kind == JsonValueKind.Object
+                ? ReadBody(contentNode)
+                : string.Empty;
+        }
+
         private static string ReadBody(JsonValue node)
         {
             var direct = ReadString(node, "body", "text", "content", "description", "message", "markdown");
@@ -506,6 +551,17 @@ namespace Game.Core.Application.Session
             if (!string.IsNullOrWhiteSpace(direct))
             {
                 return direct;
+            }
+
+            if (node.TryGetPropertyIgnoreCase("payload", out var payloadNode)
+                && payloadNode.Kind == JsonValueKind.Object)
+            {
+                var payloadText = ReadString(payloadNode, "text", "body", "description", "message", "markdown");
+
+                if (!string.IsNullOrWhiteSpace(payloadText))
+                {
+                    return payloadText;
+                }
             }
 
             if (node.TryGetPropertyIgnoreCase("content", out var contentNode)

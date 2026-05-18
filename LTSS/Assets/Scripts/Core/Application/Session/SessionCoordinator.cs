@@ -212,6 +212,139 @@ namespace Game.Core.Application.Session
             LoadBootstrapInternal(allowSnapshotFallback: true, loginFallbackState: AppStateId.Login, reason: "manual");
         }
 
+        public void RefreshBootstrapInPlace(Action<bool, string> onCompleted = null)
+        {
+            if (_isBusy)
+            {
+                onCompleted?.Invoke(false, "Сессия уже выполняет другую операцию.");
+                return;
+            }
+
+            if (!_currentTokenData.IsValid || !_currentRunInfo.IsValid)
+            {
+                onCompleted?.Invoke(false, "Сессия недоступна для синхронизации.");
+                return;
+            }
+
+            _isBusy = true;
+            _logger.Info($"Bootstrap in-place refresh started for run '{_currentRunInfo.RunId}'.");
+
+            _runApiClient.GetBootstrap(_currentRunInfo.RunId, _currentTokenData.Token, response =>
+            {
+                _isBusy = false;
+
+                if (response.IsSuccess && response.Payload != null)
+                {
+                    if (!_runtimeFactory.TryBuild(
+                            _currentTokenData,
+                            _currentRunInfo,
+                            response.Payload,
+                            out var runtimeState,
+                            out var buildError))
+                    {
+                        _logger.Warning(buildError);
+                        onCompleted?.Invoke(false, buildError);
+                        return;
+                    }
+
+                    runtimeState = MergeBootstrapWithCurrentRuntime(runtimeState);
+                    _persistenceService.SaveAuthContext(runtimeState.AuthToken, runtimeState.AuthenticatedRun);
+                    _persistenceService.SaveBootstrapSnapshot(
+                        runtimeState.AuthenticatedRun,
+                        runtimeState.Bootstrap.BootstrapVersion,
+                        response.RawResponse);
+
+                    PublishRuntime(runtimeState);
+                    _logger.Info($"Bootstrap in-place refresh succeeded for run '{runtimeState.AuthenticatedRun.RunId}'.");
+                    onCompleted?.Invoke(true, string.Empty);
+                    return;
+                }
+
+                var errorMessage = BuildApiError("Не удалось синхронизировать данные сессии.", response);
+                _logger.Warning(errorMessage);
+                onCompleted?.Invoke(false, errorMessage);
+            });
+        }
+
+        private ClientRuntimeState MergeBootstrapWithCurrentRuntime(ClientRuntimeState refreshedRuntime)
+        {
+            if (refreshedRuntime == null
+                || !refreshedRuntime.HasSession
+                || _currentRuntime == null
+                || !_currentRuntime.HasSession
+                || _currentRuntime.Bootstrap == null)
+            {
+                return refreshedRuntime ?? ClientRuntimeState.Empty;
+            }
+
+            var refreshedBootstrap = refreshedRuntime.Bootstrap;
+            var currentBootstrap = _currentRuntime.Bootstrap;
+            var mergedSession = ShouldKeepExistingSession(refreshedBootstrap.Session, currentBootstrap.Session)
+                ? currentBootstrap.Session
+                : refreshedBootstrap.Session;
+            var mergedParticipant = ShouldKeepExistingParticipant(refreshedBootstrap.Participant, currentBootstrap.Participant)
+                ? currentBootstrap.Participant
+                : refreshedBootstrap.Participant;
+            var mergedSurveyTemplates = refreshedBootstrap.SurveyTemplates == null || refreshedBootstrap.SurveyTemplates.Count == 0
+                ? currentBootstrap.SurveyTemplates
+                : refreshedBootstrap.SurveyTemplates;
+            var mergedDataset = refreshedBootstrap.StatisticalDataset == null || !refreshedBootstrap.StatisticalDataset.HasDataset
+                ? currentBootstrap.StatisticalDataset
+                : refreshedBootstrap.StatisticalDataset;
+            var mergedBootstrap = new BootstrapPayload(
+                refreshedBootstrap.Run,
+                mergedSession,
+                mergedParticipant,
+                mergedSurveyTemplates,
+                mergedDataset);
+
+            return new ClientRuntimeState(
+                refreshedRuntime.AuthToken,
+                refreshedRuntime.AuthenticatedRun,
+                mergedBootstrap,
+                refreshedRuntime.CanRestore);
+        }
+
+        private static bool ShouldKeepExistingSession(SessionRuntimeModel refreshed, SessionRuntimeModel existing)
+        {
+            if (existing == null)
+            {
+                return false;
+            }
+
+            if (refreshed == null)
+            {
+                return true;
+            }
+
+            return (refreshed.SessionDefinitionId <= 0 && string.IsNullOrWhiteSpace(refreshed.Code))
+                   || refreshed.SessionConfig == null
+                   || (!refreshed.SessionConfig.Document.IsValid && existing.SessionConfig != null && existing.SessionConfig.Document.IsValid)
+                   || (refreshed.SessionConfig.Document.IsEmpty && existing.SessionConfig != null && !existing.SessionConfig.Document.IsEmpty)
+                   || (refreshed.SessionConfig.Runtime == null || !refreshed.SessionConfig.Runtime.IsValid)
+                      && existing.SessionConfig != null
+                      && existing.SessionConfig.Runtime != null
+                      && existing.SessionConfig.Runtime.IsValid;
+        }
+
+        private static bool ShouldKeepExistingParticipant(ParticipantRuntimeModel refreshed, ParticipantRuntimeModel existing)
+        {
+            if (existing == null)
+            {
+                return false;
+            }
+
+            if (refreshed == null)
+            {
+                return true;
+            }
+
+            return (refreshed.ParticipantAccountId <= 0 && string.IsNullOrWhiteSpace(refreshed.Login))
+                   || refreshed.AssignedConfig == null
+                   || (!refreshed.AssignedConfig.Document.IsValid && existing.AssignedConfig != null && existing.AssignedConfig.Document.IsValid)
+                   || (refreshed.AssignedConfig.Document.IsEmpty && existing.AssignedConfig != null && !existing.AssignedConfig.Document.IsEmpty);
+        }
+
         public void UpdateLocalRunProgress(int currentPeriodNumber, RunLifecycleStatus runStatus)
         {
             if (!_currentRuntime.HasSession || currentPeriodNumber <= 0)

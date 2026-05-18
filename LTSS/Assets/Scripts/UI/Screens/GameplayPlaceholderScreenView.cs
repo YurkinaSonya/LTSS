@@ -919,8 +919,10 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         }
 
         var safeValue = value ?? string.Empty;
+        var preserveFocusedInput = inputField.isFocused
+                                   && NumericInputParser.ShouldPreserveFocusedInput(inputField.text, safeValue);
 
-        if (inputField.text != safeValue)
+        if (!preserveFocusedInput && inputField.text != safeValue)
         {
             inputField.text = safeValue;
         }
@@ -928,7 +930,9 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         if (inputField.textComponent != null)
         {
             inputField.textComponent.gameObject.SetActive(true);
-            inputField.textComponent.text = safeValue;
+            inputField.textComponent.text = preserveFocusedInput
+                ? inputField.text
+                : safeValue;
             inputField.textComponent.color = RuntimeUiFactory.TextPrimaryColor;
             inputField.textComponent.enabled = true;
         }
@@ -936,7 +940,9 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         if (inputField.placeholder is Graphic placeholderGraphic)
         {
             placeholderGraphic.gameObject.SetActive(true);
-            placeholderGraphic.enabled = string.IsNullOrWhiteSpace(safeValue);
+            placeholderGraphic.enabled = string.IsNullOrWhiteSpace(preserveFocusedInput
+                ? inputField.text
+                : safeValue);
         }
 
         inputField.ForceLabelUpdate();

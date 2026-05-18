@@ -206,7 +206,7 @@ namespace Game.Core.Application.Periods
                     true));
             }
 
-            if (string.Equals(expenseDefinition.Id, "holiday", StringComparison.Ordinal)
+            if (false && string.Equals(expenseDefinition.Id, "holiday", StringComparison.Ordinal)
                 && amount > ComparisonTolerance)
             {
                 var fixedAmount = expenseDefinition.MaximumAmount > 0d
@@ -370,7 +370,7 @@ namespace Game.Core.Application.Periods
                 ? expenseDefinition.MaximumAmount
                 : ScaleThreshold(definition, HolidayBase);
 
-            return Math.Abs(amount - fixedAmount) <= ComparisonTolerance
+            return amount + ComparisonTolerance >= fixedAmount
                 ? HolidayBonusUje
                 : 0d;
         }

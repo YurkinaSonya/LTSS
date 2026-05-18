@@ -29,12 +29,70 @@ namespace Game.Core.Application.Periods
                 return true;
             }
 
+            if (IsIncompleteDecimalInput(normalized))
+            {
+                return false;
+            }
+
             return double.TryParse(
                        normalized,
                        NumberStyles.Float,
                        CultureInfo.InvariantCulture,
                        out amount)
                    && amount >= 0d;
+        }
+
+        public static bool ShouldPreserveFocusedInput(string currentText, string formattedValue)
+        {
+            var currentNormalized = Normalize(currentText);
+            var formattedNormalized = Normalize(formattedValue);
+
+            if (string.IsNullOrWhiteSpace(currentNormalized))
+            {
+                return false;
+            }
+
+            if (IsIncompleteDecimalInput(currentNormalized))
+            {
+                return true;
+            }
+
+            if (string.IsNullOrWhiteSpace(formattedNormalized)
+                && double.TryParse(
+                    currentNormalized,
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out var zeroCandidate)
+                && System.Math.Abs(zeroCandidate) <= 0.0000001d)
+            {
+                return true;
+            }
+
+            if (!currentNormalized.Contains("."))
+            {
+                return false;
+            }
+
+            if (!double.TryParse(
+                    currentNormalized,
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out var currentAmount))
+            {
+                return false;
+            }
+
+            if (!double.TryParse(
+                    formattedNormalized,
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out var formattedAmount))
+            {
+                return false;
+            }
+
+            return System.Math.Abs(currentAmount - formattedAmount) <= 0.0000001d
+                   && !string.Equals(currentNormalized, formattedNormalized, System.StringComparison.Ordinal);
         }
 
         private static char ValidateCharacter(string currentText, int charIndex, char addedChar)
@@ -57,11 +115,25 @@ namespace Game.Core.Application.Periods
 
         private static string Normalize(string rawAmount)
         {
-            return (rawAmount ?? string.Empty)
+            var normalized = (rawAmount ?? string.Empty)
                 .Trim()
                 .Replace(" ", string.Empty)
                 .Replace("\u00A0", string.Empty)
                 .Replace(',', '.');
+
+            return normalized.StartsWith(".")
+                ? $"0{normalized}"
+                : normalized;
+        }
+
+        private static bool IsIncompleteDecimalInput(string normalized)
+        {
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return false;
+            }
+
+            return normalized.EndsWith(".", System.StringComparison.Ordinal);
         }
     }
 }

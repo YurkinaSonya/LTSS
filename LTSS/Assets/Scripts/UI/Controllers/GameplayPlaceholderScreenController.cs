@@ -36,8 +36,12 @@ public sealed class GameplayPlaceholderScreenController : ScreenController
 
     private void ApplyState(PeriodRuntimeState runtimeState)
     {
+        var latestState = Context.PeriodGameplay != null
+            ? Context.PeriodGameplay.Current
+            : runtimeState;
+
         _view?.Render(
-            runtimeState ?? PeriodRuntimeState.Empty,
+            latestState ?? PeriodRuntimeState.Empty,
             OnBack,
             OnComplete,
             OnExpenseAmountChanged,
