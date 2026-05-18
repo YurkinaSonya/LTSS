@@ -7,7 +7,15 @@ namespace Game.Core.Application.Periods
 {
     public sealed class PeriodCalculationEngine : IPeriodCalculationEngine
     {
-        private const double DefaultReferenceAmount = 1d;
+        private const double ComparisonTolerance = 0.01d;
+        private const double GoodsServicesMinBase = 20d;
+        private const double GoodsServicesUpperBase = 60d;
+        private const double HousingRentBase = 20d;
+        private const double LeisureFirstBase = 10d;
+        private const double LeisureUpperBase = 100d;
+        private const double HolidayBase = 10d;
+        private const double HolidayBonusUje = 15d;
+        private const double LeisureZeroSpendPenalty = -10d;
 
         public PeriodCalculationSummary Recalculate(
             PeriodRuntimeDefinition definition,
@@ -78,7 +86,6 @@ namespace Game.Core.Application.Periods
 
             var accumulatedUje = definition.CalculationSettings.BaseUje;
             var projectedUjeDelta = 0d;
-            var uje = accumulatedUje;
 
             foreach (var expenseDefinition in definition.ExpenseDefinitions)
             {
@@ -88,32 +95,20 @@ namespace Game.Core.Application.Periods
                 }
 
                 var state = FindExpenseState(safeExpenses, expenseDefinition.Id);
-                var amount = state != null ? Math.Max(0d, state.Amount) : 0d;
-                var referenceAmount = expenseDefinition.UjeReferenceAmount > 0d
-                    ? expenseDefinition.UjeReferenceAmount
-                    : expenseDefinition.MinimumAmount > 0d
-                        ? expenseDefinition.MinimumAmount
-                        : DefaultReferenceAmount;
-                var ratio = referenceAmount > 0d
-                    ? Math.Min(1d, amount / referenceAmount)
-                    : 0d;
-                var contribution = expenseDefinition.UjeWeight * ratio;
+                var contribution = CalculateUjeContribution(definition, expenseDefinition, state);
 
                 projectedUjeDelta += contribution;
-                uje += contribution;
                 ujeBreakdown.Add(new UjeBreakdownItem(
                     expenseDefinition.Id,
                     expenseDefinition.Title,
                     contribution,
-                    expenseDefinition.UjeWeight,
-                    referenceAmount));
+                    GetUjeBreakdownMaximumValue(definition, expenseDefinition),
+                    GetUjeBreakdownReferenceAmount(definition, expenseDefinition)));
 
                 ValidateExpense(definition, expenseDefinition, state, validationIssues);
             }
 
-            uje = Math.Max(0d, definition.CalculationSettings.MaximumUje > 0d
-                ? Math.Min(definition.CalculationSettings.MaximumUje, uje)
-                : uje);
+            var uje = accumulatedUje + projectedUjeDelta;
 
             var remainingToAllocate = definition.CalculationSettings.CurrentIncomeEcu
                 - incomeAllocatedToExpenses
@@ -200,6 +195,34 @@ namespace Game.Core.Application.Periods
                     true));
             }
 
+            if (string.Equals(expenseDefinition.Id, "housing_rent", StringComparison.Ordinal)
+                && amount > ComparisonTolerance
+                && Math.Abs(amount - expenseDefinition.MinimumAmount) > definition.ValidationSettings.CompletionRemainderTolerance)
+            {
+                issues.Add(new PeriodValidationIssue(
+                    "housing_rent_fixed_amount",
+                    $"Для статьи «{expenseDefinition.Title}» доступна только фиксированная сумма {EcuFormatter.FormatAmount(expenseDefinition.MinimumAmount)}.",
+                    expenseDefinition.Id,
+                    true));
+            }
+
+            if (string.Equals(expenseDefinition.Id, "holiday", StringComparison.Ordinal)
+                && amount > ComparisonTolerance)
+            {
+                var fixedAmount = expenseDefinition.MaximumAmount > 0d
+                    ? expenseDefinition.MaximumAmount
+                    : ScaleThreshold(definition, HolidayBase);
+
+                if (Math.Abs(amount - fixedAmount) > definition.ValidationSettings.CompletionRemainderTolerance)
+                {
+                    issues.Add(new PeriodValidationIssue(
+                        "holiday_fixed_amount",
+                        $"Для статьи «{expenseDefinition.Title}» доступна только фиксированная сумма {EcuFormatter.FormatAmount(fixedAmount)}.",
+                        expenseDefinition.Id,
+                        true));
+                }
+            }
+
             if (state == null)
             {
                 return;
@@ -228,6 +251,183 @@ namespace Game.Core.Application.Periods
                     expenseDefinition.Id,
                     true));
             }
+        }
+
+        private static double CalculateUjeContribution(
+            PeriodRuntimeDefinition definition,
+            PeriodExpenseDefinition expenseDefinition,
+            PeriodExpenseState state)
+        {
+            var amount = state != null ? Math.Max(0d, state.Amount) : 0d;
+
+            switch (expenseDefinition.Id)
+            {
+                case "goods_services":
+                    return CalculateGoodsServicesContribution(definition, expenseDefinition, amount);
+                case "housing_rent":
+                    return CalculateHousingContribution(expenseDefinition, amount);
+                case "leisure":
+                    return CalculateLeisureContribution(definition, amount);
+                case "holiday":
+                    return CalculateHolidayContribution(definition, expenseDefinition, amount);
+                default:
+                    return 0d;
+            }
+        }
+
+        private static double CalculateGoodsServicesContribution(
+            PeriodRuntimeDefinition definition,
+            PeriodExpenseDefinition expenseDefinition,
+            double amount)
+        {
+            var minimumAmount = expenseDefinition.MinimumAmount > 0d
+                ? expenseDefinition.MinimumAmount
+                : ScaleThreshold(definition, GoodsServicesMinBase);
+            var upperThreshold = ScaleThreshold(definition, GoodsServicesUpperBase);
+
+            if (amount + ComparisonTolerance < minimumAmount)
+            {
+                return 0d;
+            }
+
+            if (amount <= minimumAmount + ComparisonTolerance)
+            {
+                return 1d;
+            }
+
+            if (amount >= upperThreshold - ComparisonTolerance)
+            {
+                return 1.3d;
+            }
+
+            return Lerp(minimumAmount, upperThreshold, amount, 1d, 1.3d);
+        }
+
+        private static double CalculateHousingContribution(
+            PeriodExpenseDefinition expenseDefinition,
+            double amount)
+        {
+            if (expenseDefinition.MinimumAmount <= 0d
+                || amount <= ComparisonTolerance
+                || Math.Abs(amount - expenseDefinition.MinimumAmount) > ComparisonTolerance)
+            {
+                return 0d;
+            }
+
+            return 1d;
+        }
+
+        private static double CalculateLeisureContribution(
+            PeriodRuntimeDefinition definition,
+            double amount)
+        {
+            var firstThreshold = ScaleThreshold(definition, LeisureFirstBase);
+            var upperThreshold = ScaleThreshold(definition, LeisureUpperBase);
+
+            if (amount <= ComparisonTolerance)
+            {
+                return LeisureZeroSpendPenalty;
+            }
+
+            if (amount < firstThreshold - ComparisonTolerance)
+            {
+                return Lerp(0d, firstThreshold, amount, 0d, 1d);
+            }
+
+            if (amount <= firstThreshold + ComparisonTolerance)
+            {
+                return 1d;
+            }
+
+            if (amount < upperThreshold - ComparisonTolerance)
+            {
+                return Lerp(firstThreshold, upperThreshold, amount, 1.1d, 2d);
+            }
+
+            return 2d;
+        }
+
+        private static double CalculateHolidayContribution(
+            PeriodRuntimeDefinition definition,
+            PeriodExpenseDefinition expenseDefinition,
+            double amount)
+        {
+            if (amount <= ComparisonTolerance)
+            {
+                return 0d;
+            }
+
+            var fixedAmount = expenseDefinition.MaximumAmount > 0d
+                ? expenseDefinition.MaximumAmount
+                : ScaleThreshold(definition, HolidayBase);
+
+            return Math.Abs(amount - fixedAmount) <= ComparisonTolerance
+                ? HolidayBonusUje
+                : 0d;
+        }
+
+        private static double GetUjeBreakdownMaximumValue(
+            PeriodRuntimeDefinition definition,
+            PeriodExpenseDefinition expenseDefinition)
+        {
+            switch (expenseDefinition.Id)
+            {
+                case "goods_services":
+                    return 1.3d;
+                case "housing_rent":
+                    return 1d;
+                case "leisure":
+                    return 2d;
+                case "holiday":
+                    return HolidayBonusUje;
+                default:
+                    return 0d;
+            }
+        }
+
+        private static double GetUjeBreakdownReferenceAmount(
+            PeriodRuntimeDefinition definition,
+            PeriodExpenseDefinition expenseDefinition)
+        {
+            switch (expenseDefinition.Id)
+            {
+                case "goods_services":
+                    return ScaleThreshold(definition, GoodsServicesUpperBase);
+                case "housing_rent":
+                    return expenseDefinition.MinimumAmount > 0d
+                        ? expenseDefinition.MinimumAmount
+                        : ScaleThreshold(definition, HousingRentBase);
+                case "leisure":
+                    return ScaleThreshold(definition, LeisureUpperBase);
+                case "holiday":
+                    return expenseDefinition.MaximumAmount > 0d
+                        ? expenseDefinition.MaximumAmount
+                        : ScaleThreshold(definition, HolidayBase);
+                default:
+                    return expenseDefinition.MinimumAmount > 0d
+                        ? expenseDefinition.MinimumAmount
+                        : 0d;
+            }
+        }
+
+        private static double ScaleThreshold(PeriodRuntimeDefinition definition, double baseValue)
+        {
+            var multiplier = definition != null && definition.EconomyContext != null
+                ? Math.Max(0.0001d, definition.EconomyContext.ExpenseInflationMultiplier)
+                : 1d;
+            return baseValue * multiplier;
+        }
+
+        private static double Lerp(double minX, double maxX, double currentX, double minY, double maxY)
+        {
+            if (maxX <= minX)
+            {
+                return maxY;
+            }
+
+            var progress = (currentX - minX) / (maxX - minX);
+            progress = Math.Max(0d, Math.Min(1d, progress));
+            return minY + (maxY - minY) * progress;
         }
 
         private static void ValidateIncomeRemainder(

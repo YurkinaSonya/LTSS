@@ -350,7 +350,7 @@ namespace Game.Domain.GameFlow
                 ? new List<PeriodAssetDefinition>(assetDefinitions)
                 : Array.Empty<PeriodAssetDefinition>();
             ValidationSettings = validationSettings ?? new PeriodValidationSettings(true, true, true, 0.01d, 0d);
-            CalculationSettings = calculationSettings ?? new PeriodCalculationSettings(0d, 100d, 0d, 100d);
+            CalculationSettings = calculationSettings ?? new PeriodCalculationSettings(0d, 100d, 0d, 0d);
             EconomyContext = economyContext ?? PeriodEconomyContext.Empty;
             InitialCashBalance = initialCashBalance;
             InitialDepositBalance = initialDepositBalance;

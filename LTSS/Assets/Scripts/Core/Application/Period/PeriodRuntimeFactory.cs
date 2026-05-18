@@ -208,14 +208,14 @@ namespace Game.Core.Application.Periods
                 "baseUje",
                 "startingUje",
                 "wellbeingBase",
-                "energyBase") ?? 25d;
+                "energyBase") ?? 0d;
             var maximumUje = FirstNumber(
                 periodNode,
                 sessionRoot,
                 "maxUje",
                 "maximumUje",
                 "wellbeingMax",
-                "energyMax") ?? 100d;
+                "energyMax") ?? 0d;
             var minimumUje = FirstNumber(
                 periodNode,
                 sessionRoot,
@@ -606,6 +606,8 @@ namespace Game.Core.Application.Periods
                 var rawUjeReference = GetNumber(expenseNode, "ujeReferenceAmount", "targetAmount", "referenceAmount", "saturationAmount")
                     ?? defaults.UjeReferenceAmount;
                 var allowedSources = ParseAllowedSources(expenseNode.FindFirstDescendantProperty("allowedSources", "sources", "fundSources"));
+                rawMinimumAmount = ApplyRequiredMinimumOverride(expenseId, required, rawMinimumAmount);
+                ApplyFixedExpenseBounds(expenseId, rawMinimumAmount, ref rawMaximumAmount);
                 var inflationMultiplier = economyContext != null
                     ? Math.Max(0.0001d, economyContext.ExpenseInflationMultiplier)
                     : 1d;
@@ -620,8 +622,6 @@ namespace Game.Core.Application.Periods
                 {
                     allowedSources = defaults.AllowedSources;
                 }
-
-                rawMinimumAmount = ApplyRequiredMinimumOverride(expenseId, required, rawMinimumAmount);
 
                 result.Add(new PeriodExpenseDefinition(
                     expenseId,
@@ -1011,6 +1011,23 @@ namespace Game.Core.Application.Periods
             }
         }
 
+        private static void ApplyFixedExpenseBounds(string expenseId, double minimumAmount, ref double maximumAmount)
+        {
+            switch (expenseId)
+            {
+                case "housing_rent":
+                    maximumAmount = minimumAmount > 0d
+                        ? minimumAmount
+                        : maximumAmount;
+                    break;
+                case "holiday":
+                    maximumAmount = maximumAmount > 0d
+                        ? maximumAmount
+                        : 10d;
+                    break;
+            }
+        }
+
         private static PeriodExpenseDefinition GetFallbackExpense(string expenseId)
         {
             switch (expenseId)
@@ -1022,10 +1039,10 @@ namespace Game.Core.Application.Periods
                         true,
                         0d,
                         20d,
-                        0d,
+                        20d,
                         new[] { FundsSourceType.CurrentIncome, FundsSourceType.Cash },
-                        28d,
-                        35d,
+                        0d,
+                        20d,
                         "Обязательная статья периода.");
                 case "leisure":
                     return new PeriodExpenseDefinition(
@@ -1036,8 +1053,8 @@ namespace Game.Core.Application.Periods
                         0d,
                         0d,
                         new[] { FundsSourceType.CurrentIncome, FundsSourceType.Cash },
-                        15d,
-                        10d,
+                        0d,
+                        100d,
                         string.Empty);
                 case "holiday":
                     return new PeriodExpenseDefinition(
@@ -1046,10 +1063,10 @@ namespace Game.Core.Application.Periods
                         false,
                         0d,
                         0d,
-                        0d,
-                        new[] { FundsSourceType.CurrentIncome, FundsSourceType.Cash },
                         10d,
-                        8d,
+                        new[] { FundsSourceType.CurrentIncome, FundsSourceType.Cash },
+                        0d,
+                        10d,
                         string.Empty);
                 case "goods_services":
                 default:
@@ -1061,8 +1078,8 @@ namespace Game.Core.Application.Periods
                         20d,
                         0d,
                         new[] { FundsSourceType.CurrentIncome, FundsSourceType.Cash },
-                        22d,
-                        20d,
+                        0d,
+                        60d,
                         "Базовая бытовая статья расходов.");
             }
         }

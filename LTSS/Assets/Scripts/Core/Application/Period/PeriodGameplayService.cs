@@ -1184,7 +1184,7 @@ namespace Game.Core.Application.Periods
             _pendingCarryOverTargetPeriodNumber = targetPeriodNumber > 0 ? targetPeriodNumber : 0;
             _pendingCarryOverCashBalance = summary != null ? Math.Max(0d, summary.CashBalance) : 0d;
             _pendingCarryOverDepositBalance = summary != null ? Math.Max(0d, summary.DepositBalance) : 0d;
-            _pendingCarryOverAccumulatedUje = summary != null ? Math.Max(0d, summary.Uje) : 0d;
+            _pendingCarryOverAccumulatedUje = summary != null ? summary.Uje : 0d;
         }
 
         private void ClearPendingCarryOver()
