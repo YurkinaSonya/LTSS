@@ -473,6 +473,19 @@ namespace Game.Core.Application.Periods
             Publish(_current.With(statusMessage: string.Empty, lastError: string.Empty));
         }
 
+        public void OpenPdsDialog()
+        {
+            if (!_current.HasDefinition
+                || !CanEditCurrentState()
+                || !IsPdsAvailable(_current.Definition))
+            {
+                return;
+            }
+
+            _popupNavigation?.Push(Enums.PopupType.Pds, "pds_open");
+            Publish(_current.With(statusMessage: string.Empty, lastError: string.Empty));
+        }
+
         public void CycleAssetDialogSource()
         {
             if (_current == null || !CanEditCurrentState() || !_current.AssetDialog.IsOpen)
@@ -733,7 +746,7 @@ namespace Game.Core.Application.Periods
                 _current.PeriodNumber,
                 definition.EconomyContext,
                 ConsumerCreditMath.DirectApartmentPurchaseMode);
-            var nextDefinition = BuildResidenceAwareDefinition(
+            var nextDefinition = BuildStateAwareDefinition(
                 definition,
                 residenceOwnership: nextResidence,
                 replaceResidenceOwnership: true,
@@ -821,7 +834,7 @@ namespace Game.Core.Application.Periods
                 _current.PeriodNumber,
                 definition.EconomyContext,
                 ConsumerCreditMath.MortgageApartmentPurchaseMode);
-            var nextDefinition = BuildResidenceAwareDefinition(
+            var nextDefinition = BuildStateAwareDefinition(
                 definition,
                 consumerCredits: nextCredits,
                 residenceOwnership: nextResidence,
@@ -866,6 +879,83 @@ namespace Game.Core.Application.Periods
             }
 
             SellApartment();
+            return true;
+        }
+
+        public bool TrySubmitPds(string rawAmount, out string errorMessage)
+        {
+            errorMessage = string.Empty;
+
+            if (!_current.HasDefinition || !CanEditCurrentState())
+            {
+                errorMessage = "Период недоступен для ПДС.";
+                return false;
+            }
+
+            if (!IsPdsAvailable(_current.Definition))
+            {
+                errorMessage = "ПДС пока недоступна.";
+                return false;
+            }
+
+            var pensionReserve = _current.Definition.PensionReserve;
+
+            if (pensionReserve == null || pensionReserve.Balance <= 0.01d)
+            {
+                errorMessage = "Нет доступных пенсионных накоплений для перевода в ПДС.";
+                return false;
+            }
+
+            if (!NumericInputParser.TryParseNonNegativeAmount(rawAmount, out var amount) || amount <= 0d)
+            {
+                errorMessage = "Введите сумму перевода в ПДС.";
+                return false;
+            }
+
+            if (amount > pensionReserve.Balance + 0.01d)
+            {
+                errorMessage = $"Доступно только {EcuFormatter.FormatAmount(pensionReserve.Balance)} пенсионных накоплений.";
+                return false;
+            }
+
+            var nextPensionReserve = new PensionReserveRuntime(
+                Math.Max(0d, pensionReserve.Balance - amount),
+                pensionReserve.IsAccrualActive,
+                pensionReserve.HasEverBeenActive);
+            var currentPds = _current.Definition.PdsAccount;
+            var nextPdsBalance = (currentPds != null ? currentPds.Balance : 0d) + amount;
+            var nextPds = new PdsAccountRuntime(
+                currentPds != null && !string.IsNullOrWhiteSpace(currentPds.AccountId)
+                    ? currentPds.AccountId
+                    : Guid.NewGuid().ToString("N"),
+                nextPdsBalance,
+                currentPds != null && currentPds.ActivationPeriodNumber > 0
+                    ? currentPds.ActivationPeriodNumber
+                    : _current.PeriodNumber);
+            var nextDefinition = BuildStateAwareDefinition(
+                _current.Definition,
+                pensionReserve: nextPensionReserve,
+                replacePensionReserve: true,
+                pdsAccount: nextPds,
+                replacePdsAccount: true);
+            var nextSummary = _calculationEngine.Recalculate(nextDefinition, _current.Expenses, _current.AssetOperations);
+            var nextState = new PeriodRuntimeState(
+                _current.RunId,
+                _current.PeriodNumber,
+                PeriodFlowState.PeriodActive,
+                nextDefinition,
+                _current.Expenses,
+                _current.AssetOperations,
+                nextSummary,
+                AssetOperationDialogState.Closed,
+                _current.IsCheckpointSubmitted,
+                currentPds == null ? "ПДС активирована." : "ПДС пополнена.",
+                string.Empty,
+                _current.SubmittedAtUtc,
+                true);
+
+            Publish(nextState);
+            PersistCurrentState();
             return true;
         }
 
@@ -1149,6 +1239,8 @@ namespace Game.Core.Application.Periods
                 carryOverAccumulatedUje = state.Summary != null ? state.Summary.Uje : 0d,
                 consumerCredits = BuildConsumerCreditSnapshots(state.Definition.ConsumerCredits),
                 residenceOwnership = BuildResidenceOwnershipSnapshot(state.Definition.ResidenceOwnership),
+                pensionReserve = BuildPensionReserveSnapshot(state.Definition.PensionReserve),
+                pdsAccount = BuildPdsAccountSnapshot(state.Definition.PdsAccount),
                 expenses = BuildExpenseSnapshots(state.Expenses),
                 assetOperations = BuildOperationSnapshots(state.AssetOperations),
                 isCheckpointSubmitted = state.IsCheckpointSubmitted,
@@ -1408,6 +1500,15 @@ namespace Game.Core.Application.Periods
                    && definition.Meta.HasFeature("mortgage");
         }
 
+        private static bool IsPdsAvailable(PeriodRuntimeDefinition definition)
+        {
+            return definition != null
+                   && definition.Meta != null
+                   && definition.Meta.HasFeature("pds")
+                   && definition.PensionReserve != null
+                   && definition.PensionReserve.HasEverBeenActive;
+        }
+
         private static bool HasActiveMortgage(IReadOnlyList<ConsumerCreditContractRuntime> credits)
         {
             if (credits == null || credits.Count == 0)
@@ -1544,7 +1645,7 @@ namespace Game.Core.Application.Periods
             var salePrice = ConsumerCreditMath.CalculateResidenceCurrentValue(
                 _current.Definition.ResidenceOwnership,
                 _current.Definition.EconomyContext);
-            var nextDefinition = BuildResidenceAwareDefinition(
+            var nextDefinition = BuildStateAwareDefinition(
                 _current.Definition,
                 residenceOwnership: null,
                 replaceResidenceOwnership: true,
@@ -1917,9 +2018,14 @@ namespace Game.Core.Application.Periods
 
         private static PeriodRuntimeDefinition CloneDefinition(
             PeriodRuntimeDefinition definition,
+            IReadOnlyList<PeriodInfoBlockValue> infoBlockValues = null,
             IReadOnlyList<ConsumerCreditContractRuntime> consumerCredits = null,
             ResidenceOwnershipRuntime residenceOwnership = null,
             bool replaceResidenceOwnership = false,
+            PensionReserveRuntime pensionReserve = null,
+            bool replacePensionReserve = false,
+            PdsAccountRuntime pdsAccount = null,
+            bool replacePdsAccount = false,
             IReadOnlyList<PeriodExpenseDefinition> expenseDefinitions = null,
             IReadOnlyList<PeriodAssetDefinition> assetDefinitions = null,
             double? initialCashBalance = null,
@@ -1937,7 +2043,7 @@ namespace Game.Core.Application.Periods
 
             return new PeriodRuntimeDefinition(
                 definition.Meta,
-                definition.InfoBlockValues,
+                infoBlockValues ?? definition.InfoBlockValues,
                 expenseDefinitions ?? definition.ExpenseDefinitions,
                 assetDefinitions ?? definition.AssetDefinitions,
                 definition.ValidationSettings,
@@ -1951,16 +2057,26 @@ namespace Game.Core.Application.Periods
                 replaceResidenceOwnership
                     ? residenceOwnership
                     : residenceOwnership ?? definition.ResidenceOwnership,
+                replacePensionReserve
+                    ? pensionReserve
+                    : pensionReserve ?? definition.PensionReserve,
+                replacePdsAccount
+                    ? pdsAccount
+                    : pdsAccount ?? definition.PdsAccount,
                 initialCashBalance ?? definition.InitialCashBalance,
                 initialDepositBalance ?? definition.InitialDepositBalance,
                 definition.SourceSummary);
         }
 
-        private static PeriodRuntimeDefinition BuildResidenceAwareDefinition(
+        private static PeriodRuntimeDefinition BuildStateAwareDefinition(
             PeriodRuntimeDefinition definition,
             IReadOnlyList<ConsumerCreditContractRuntime> consumerCredits = null,
             ResidenceOwnershipRuntime residenceOwnership = null,
             bool replaceResidenceOwnership = false,
+            PensionReserveRuntime pensionReserve = null,
+            bool replacePensionReserve = false,
+            PdsAccountRuntime pdsAccount = null,
+            bool replacePdsAccount = false,
             double? initialCashBalance = null,
             double? initialDepositBalance = null,
             double? accumulatedUje = null,
@@ -1975,23 +2091,92 @@ namespace Game.Core.Application.Periods
             var targetResidence = replaceResidenceOwnership
                 ? residenceOwnership
                 : residenceOwnership ?? definition.ResidenceOwnership;
+            var targetPensionReserve = replacePensionReserve
+                ? pensionReserve
+                : pensionReserve ?? definition.PensionReserve;
+            var targetPdsAccount = replacePdsAccount
+                ? pdsAccount
+                : pdsAccount ?? definition.PdsAccount;
+            var targetEconomyContext = economyContext ?? definition.EconomyContext;
             return CloneDefinition(
                 definition,
+                infoBlockValues: BuildInfoBlockValues(
+                    definition.InfoBlockValues,
+                    targetPensionReserve),
                 consumerCredits: consumerCredits,
                 residenceOwnership: targetResidence,
                 replaceResidenceOwnership: true,
+                pensionReserve: targetPensionReserve,
+                replacePensionReserve: true,
+                pdsAccount: targetPdsAccount,
+                replacePdsAccount: true,
                 expenseDefinitions: BuildResidenceAwareExpenseDefinitions(
                     definition.ExpenseDefinitions,
-                    definition.EconomyContext,
+                    targetEconomyContext,
                     targetResidence != null),
-                assetDefinitions: BuildResidenceAwareAssetDefinitions(
+                assetDefinitions: BuildStateAwareAssetDefinitions(
                     definition.AssetDefinitions,
-                    targetResidence != null),
+                    targetResidence != null,
+                    targetPdsAccount != null),
                 initialCashBalance: initialCashBalance,
                 initialDepositBalance: initialDepositBalance,
                 accumulatedUje: accumulatedUje,
-                economyContext: economyContext,
+                economyContext: targetEconomyContext,
                 currentIncomeEcu: currentIncomeEcu);
+        }
+
+        private static IReadOnlyList<PeriodInfoBlockValue> BuildInfoBlockValues(
+            IReadOnlyList<PeriodInfoBlockValue> currentValues,
+            PensionReserveRuntime pensionReserve)
+        {
+            var result = new List<PeriodInfoBlockValue>();
+
+            if (currentValues != null)
+            {
+                for (var index = 0; index < currentValues.Count; index++)
+                {
+                    var currentValue = currentValues[index];
+
+                    if (currentValue == null
+                        || string.Equals(currentValue.Id, "pension_savings", StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    result.Add(currentValue);
+                }
+            }
+
+            var pensionInfoValue = BuildPensionInfoValue(pensionReserve);
+
+            if (pensionInfoValue != null)
+            {
+                result.Add(pensionInfoValue);
+            }
+
+            return result;
+        }
+
+        private static PeriodInfoBlockValue BuildPensionInfoValue(PensionReserveRuntime pensionReserve)
+        {
+            if (pensionReserve == null || !pensionReserve.HasEverBeenActive)
+            {
+                return null;
+            }
+
+            return pensionReserve.IsAccrualActive
+                ? new PeriodInfoBlockValue(
+                    "pension_savings",
+                    "Накопления на пенсию",
+                    Math.Max(0d, pensionReserve.Balance),
+                    " ECU",
+                    string.Empty)
+                : new PeriodInfoBlockValue(
+                    "pension_savings",
+                    "Накопления на пенсию",
+                    null,
+                    string.Empty,
+                    $"{Math.Max(0d, pensionReserve.Balance).ToString("0.##", CultureInfo.InvariantCulture)} ECU (начисления заморожены)");
         }
 
         private static IReadOnlyList<PeriodExpenseDefinition> BuildResidenceAwareExpenseDefinitions(
@@ -2079,12 +2264,14 @@ namespace Game.Core.Application.Periods
             return result;
         }
 
-        private static IReadOnlyList<PeriodAssetDefinition> BuildResidenceAwareAssetDefinitions(
+        private static IReadOnlyList<PeriodAssetDefinition> BuildStateAwareAssetDefinitions(
             IReadOnlyList<PeriodAssetDefinition> definitions,
-            bool hasOwnedResidence)
+            bool hasOwnedResidence,
+            bool hasPdsAccount)
         {
             var result = new List<PeriodAssetDefinition>();
             var hasApartment = false;
+            var hasPds = false;
 
             if (definitions != null)
             {
@@ -2108,6 +2295,17 @@ namespace Game.Core.Application.Periods
                         }
                     }
 
+                    if (definition.AssetType == PeriodAssetType.Pds
+                        || string.Equals(definition.Id, ConsumerCreditMath.PdsAssetId, StringComparison.Ordinal))
+                    {
+                        hasPds = true;
+
+                        if (!hasPdsAccount)
+                        {
+                            continue;
+                        }
+                    }
+
                     result.Add(definition);
                 }
             }
@@ -2122,6 +2320,18 @@ namespace Game.Core.Application.Periods
                     true,
                     Array.Empty<FundsSourceType>(),
                     "Собственное жильё участника."));
+            }
+
+            if (hasPdsAccount && !hasPds)
+            {
+                result.Add(new PeriodAssetDefinition(
+                    ConsumerCreditMath.PdsAssetId,
+                    "ПДС",
+                    PeriodAssetType.Pds,
+                    false,
+                    false,
+                    Array.Empty<FundsSourceType>(),
+                    "Программа долгосрочных сбережений."));
             }
 
             return result;
@@ -2271,6 +2481,36 @@ namespace Game.Core.Application.Periods
                 purchasePeriodNumber = residenceOwnership.PurchasePeriodNumber,
                 purchaseInflationMultiplier = residenceOwnership.PurchaseInflationMultiplier,
                 acquisitionMode = residenceOwnership.AcquisitionMode
+            };
+        }
+
+        private static PensionReserveSnapshotDto BuildPensionReserveSnapshot(PensionReserveRuntime pensionReserve)
+        {
+            if (pensionReserve == null)
+            {
+                return null;
+            }
+
+            return new PensionReserveSnapshotDto
+            {
+                balance = pensionReserve.Balance,
+                isAccrualActive = pensionReserve.IsAccrualActive,
+                hasEverBeenActive = pensionReserve.HasEverBeenActive
+            };
+        }
+
+        private static PdsAccountSnapshotDto BuildPdsAccountSnapshot(PdsAccountRuntime pdsAccount)
+        {
+            if (pdsAccount == null)
+            {
+                return null;
+            }
+
+            return new PdsAccountSnapshotDto
+            {
+                accountId = pdsAccount.AccountId,
+                balance = pdsAccount.Balance,
+                activationPeriodNumber = pdsAccount.ActivationPeriodNumber
             };
         }
 

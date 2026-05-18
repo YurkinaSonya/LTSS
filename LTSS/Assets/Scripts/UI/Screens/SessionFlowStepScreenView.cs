@@ -34,6 +34,8 @@ public sealed class SessionFlowStepScreenView : ScreenView
     private Text _bodyLabel;
     private Text _statusLabel;
     private RectTransform _bodyPanel;
+    private ScrollRect _bodyScrollRect;
+    private RectTransform _bodyContainer;
     private RectTransform _questionPanel;
     private ScrollRect _questionScrollRect;
     private RectTransform _questionContainer;
@@ -94,6 +96,10 @@ public sealed class SessionFlowStepScreenView : ScreenView
         if (_bodyPanel != null)
         {
             _bodyPanel.gameObject.SetActive(!isSurvey && hasBody);
+        }
+        if (_bodyScrollRect != null)
+        {
+            _bodyScrollRect.verticalNormalizedPosition = 1f;
         }
         _statusLabel.text = !string.IsNullOrWhiteSpace(flowState != null ? flowState.LastError : string.Empty)
             ? flowState.LastError
@@ -187,7 +193,57 @@ public sealed class SessionFlowStepScreenView : ScreenView
             new RectOffset(20, 20, 18, 18),
             10f,
             RuntimeUiFactory.SurfaceColor);
-        _bodyLabel = RuntimeUiFactory.CreateBodyText(_bodyPanel, string.Empty);
+        DisableContentSizeFitter(_bodyPanel);
+        var bodyPanelLayout = _bodyPanel.gameObject.AddComponent<LayoutElement>();
+        bodyPanelLayout.minHeight = 280f;
+        bodyPanelLayout.preferredHeight = 420f;
+        bodyPanelLayout.flexibleHeight = 1f;
+
+        var bodyScrollArea = RuntimeUiFactory.CreateRow("BodyScrollArea", _bodyPanel, 8f, TextAnchor.UpperLeft);
+        var bodyScrollAreaLayout = bodyScrollArea.GetComponent<HorizontalLayoutGroup>();
+        bodyScrollAreaLayout.childForceExpandWidth = false;
+        bodyScrollAreaLayout.childForceExpandHeight = true;
+        bodyScrollAreaLayout.childControlHeight = true;
+        var bodyScrollAreaElement = bodyScrollArea.gameObject.AddComponent<LayoutElement>();
+        bodyScrollAreaElement.flexibleHeight = 1f;
+        bodyScrollAreaElement.minHeight = 240f;
+
+        var bodyViewport = CreateRect("BodyViewport", bodyScrollArea);
+        var bodyViewportLayout = bodyViewport.gameObject.AddComponent<LayoutElement>();
+        bodyViewportLayout.flexibleWidth = 1f;
+        bodyViewportLayout.flexibleHeight = 1f;
+        bodyViewportLayout.minHeight = 240f;
+        var bodyViewportImage = bodyViewport.gameObject.AddComponent<Image>();
+        bodyViewportImage.color = Color.white;
+        var bodyViewportMask = bodyViewport.gameObject.AddComponent<Mask>();
+        bodyViewportMask.showMaskGraphic = false;
+
+        _bodyScrollRect = _bodyPanel.gameObject.AddComponent<ScrollRect>();
+        _bodyScrollRect.viewport = bodyViewport;
+        _bodyScrollRect.horizontal = false;
+        _bodyScrollRect.vertical = true;
+        _bodyScrollRect.movementType = ScrollRect.MovementType.Clamped;
+        _bodyScrollRect.scrollSensitivity = 24f;
+        var bodyScrollbar = CreateVerticalScrollbar(bodyScrollArea);
+        _bodyScrollRect.verticalScrollbar = bodyScrollbar;
+        _bodyScrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
+
+        _bodyContainer = RuntimeUiFactory.CreateContentRoot(
+            "BodyContent",
+            bodyViewport,
+            new RectOffset(0, 0, 0, 0),
+            8f);
+        _bodyContainer.anchorMin = new Vector2(0f, 1f);
+        _bodyContainer.anchorMax = new Vector2(1f, 1f);
+        _bodyContainer.pivot = new Vector2(0.5f, 1f);
+        _bodyContainer.anchoredPosition = Vector2.zero;
+        _bodyContainer.sizeDelta = new Vector2(0f, 0f);
+        var bodyContentFitter = _bodyContainer.gameObject.AddComponent<ContentSizeFitter>();
+        bodyContentFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+        bodyContentFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+        _bodyScrollRect.content = _bodyContainer;
+
+        _bodyLabel = RuntimeUiFactory.CreateBodyText(_bodyContainer, string.Empty);
         _bodyLabel.alignment = TextAnchor.UpperLeft;
         _bodyLabel.supportRichText = true;
         _bodyLabel.horizontalOverflow = HorizontalWrapMode.Wrap;

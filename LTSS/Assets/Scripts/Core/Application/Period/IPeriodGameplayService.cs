@@ -18,6 +18,7 @@ namespace Game.Core.Application.Periods
         void OpenApartmentPurchaseDialog();
         void OpenApartmentSaleDialog();
         void OpenMortgageDialog();
+        void OpenPdsDialog();
         void SetAssetDialogSource(FundsSourceType source);
         void CycleAssetDialogSource();
         void SubmitAssetDialog(string rawAmount);
@@ -25,6 +26,7 @@ namespace Game.Core.Application.Periods
         bool TryBuyApartment(out string errorMessage);
         bool TrySellApartment(out string errorMessage);
         bool TrySubmitMortgage(out string errorMessage);
+        bool TrySubmitPds(string rawAmount, out string errorMessage);
         void CloseAssetDialog();
         void ApplyPermanentIncomeLoss();
         void SubmitPeriod();

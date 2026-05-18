@@ -50,7 +50,8 @@ public sealed class GameplayPlaceholderScreenController : ScreenController
             OnAssetAction,
             OnConsumerCreditAction,
             OnApartmentPurchaseAction,
-            OnMortgageAction);
+            OnMortgageAction,
+            OnPdsAction);
     }
 
     private void OnBack()
@@ -96,5 +97,10 @@ public sealed class GameplayPlaceholderScreenController : ScreenController
     private void OnMortgageAction()
     {
         Context.PeriodGameplay?.OpenMortgageDialog();
+    }
+
+    private void OnPdsAction()
+    {
+        Context.PeriodGameplay?.OpenPdsDialog();
     }
 }

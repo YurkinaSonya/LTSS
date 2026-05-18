@@ -229,12 +229,14 @@ namespace Game.Core.Application.Periods
 
             var validationSettings = BuildValidationSettings(periodNode, sessionRoot, minimumUje);
             var residenceOwnership = ResolveResidenceOwnership(runId, periodNumber);
+            var pensionReserve = ResolvePensionReserve(runId, periodNumber, configuredPeriod, economyContext);
+            var pdsAccount = ResolvePdsAccount(runId, periodNumber);
             var baseExpenseDefinitions = BuildExpenseDefinitions(
                 periodNode,
                 sessionRoot,
                 economyContext,
                 residenceOwnership != null);
-            var assetDefinitions = BuildAssetDefinitions(residenceOwnership != null);
+            var assetDefinitions = BuildAssetDefinitions(residenceOwnership != null, pdsAccount != null);
             var activeCredits = ResolveConsumerCredits(runId, periodNumber);
             var initialCash = ResolveInitialAssetBalance(assignedRoot, periodNode, sessionRoot, "cash") ?? 0d;
             var initialDeposit = ResolveInitialAssetBalance(assignedRoot, periodNode, sessionRoot, "deposit") ?? 0d;
@@ -253,7 +255,7 @@ namespace Game.Core.Application.Periods
                     configuredPeriod.InternalCode,
                     configuredPeriod.EnabledFeatures,
                     clientRuntime.Bootstrap.Session.SessionConfig.Summary),
-                BuildStatisticsInfoBlockValues(configuredPeriod, periodNode, sessionRoot, periodStatistics),
+                BuildStatisticsInfoBlockValues(configuredPeriod, periodNode, sessionRoot, periodStatistics, pensionReserve),
                 expenseDefinitions,
                 assetDefinitions,
                 validationSettings,
@@ -265,6 +267,8 @@ namespace Game.Core.Application.Periods
                 economyContext,
                 activeCredits,
                 residenceOwnership,
+                pensionReserve,
+                pdsAccount,
                 initialCash,
                 initialDeposit,
                 periodNode.Kind != JsonValueKind.Null
@@ -464,6 +468,96 @@ namespace Game.Core.Application.Periods
                 : null;
         }
 
+        private PensionReserveRuntime ResolvePensionReserve(
+            string runId,
+            int periodNumber,
+            SessionPeriodRuntime configuredPeriod,
+            PeriodEconomyContext economyContext)
+        {
+            var pensionFeatureActive = configuredPeriod != null && configuredPeriod.HasFeature("pension_info");
+
+            if (_persistenceService == null
+                || _serializer == null
+                || string.IsNullOrWhiteSpace(runId)
+                || periodNumber <= 0
+                || !_persistenceService.TryLoadPeriodSnapshot(out var snapshot)
+                || snapshot == null
+                || !string.Equals(snapshot.runId, runId, StringComparison.Ordinal)
+                || string.IsNullOrWhiteSpace(snapshot.rawPeriodStateJson))
+            {
+                return pensionFeatureActive
+                    ? AdvancePensionReserve(null, economyContext, true)
+                    : null;
+            }
+
+            if (!_serializer.TryDeserialize(
+                    snapshot.rawPeriodStateJson,
+                    out PeriodRuntimeSnapshotDto dto,
+                    out var deserializeError))
+            {
+                _logger.Warning($"Failed to deserialize persisted pension snapshot. {deserializeError}");
+                return pensionFeatureActive
+                    ? AdvancePensionReserve(null, economyContext, true)
+                    : null;
+            }
+
+            var restoredReserve = RestorePensionReserve(dto != null ? dto.pensionReserve : null);
+
+            if (snapshot.periodNumber == periodNumber)
+            {
+                return restoredReserve;
+            }
+
+            if (snapshot.isCheckpointSubmitted && snapshot.periodNumber == periodNumber - 1)
+            {
+                return AdvancePensionReserve(restoredReserve, economyContext, pensionFeatureActive);
+            }
+
+            return pensionFeatureActive
+                ? AdvancePensionReserve(restoredReserve, economyContext, true)
+                : restoredReserve != null && restoredReserve.HasEverBeenActive
+                    ? new PensionReserveRuntime(
+                        restoredReserve.Balance,
+                        false,
+                        true)
+                    : null;
+        }
+
+        private PdsAccountRuntime ResolvePdsAccount(string runId, int periodNumber)
+        {
+            if (_persistenceService == null
+                || _serializer == null
+                || string.IsNullOrWhiteSpace(runId)
+                || periodNumber <= 0
+                || !_persistenceService.TryLoadPeriodSnapshot(out var snapshot)
+                || snapshot == null
+                || !string.Equals(snapshot.runId, runId, StringComparison.Ordinal)
+                || string.IsNullOrWhiteSpace(snapshot.rawPeriodStateJson))
+            {
+                return null;
+            }
+
+            if (!_serializer.TryDeserialize(
+                    snapshot.rawPeriodStateJson,
+                    out PeriodRuntimeSnapshotDto dto,
+                    out var deserializeError))
+            {
+                _logger.Warning($"Failed to deserialize persisted PDS snapshot. {deserializeError}");
+                return null;
+            }
+
+            var restoredAccount = RestorePdsAccount(dto != null ? dto.pdsAccount : null);
+
+            if (snapshot.periodNumber == periodNumber)
+            {
+                return restoredAccount;
+            }
+
+            return snapshot.isCheckpointSubmitted && snapshot.periodNumber == periodNumber - 1
+                ? restoredAccount
+                : null;
+        }
+
         private static IReadOnlyList<ConsumerCreditContractRuntime> RestoreConsumerCredits(
             IReadOnlyList<ConsumerCreditContractSnapshotDto> snapshots)
         {
@@ -514,6 +608,61 @@ namespace Game.Core.Application.Periods
                     ? snapshot.purchaseInflationMultiplier
                     : 1d,
                 snapshot.acquisitionMode);
+        }
+
+        private static PensionReserveRuntime RestorePensionReserve(PensionReserveSnapshotDto snapshot)
+        {
+            if (snapshot == null)
+            {
+                return null;
+            }
+
+            var balance = Math.Max(0d, snapshot.balance);
+            var hasEverBeenActive = snapshot.hasEverBeenActive || balance > 0.0001d;
+
+            return hasEverBeenActive || snapshot.isAccrualActive
+                ? new PensionReserveRuntime(
+                    balance,
+                    snapshot.isAccrualActive,
+                    hasEverBeenActive)
+                : null;
+        }
+
+        private static PdsAccountRuntime RestorePdsAccount(PdsAccountSnapshotDto snapshot)
+        {
+            if (snapshot == null || string.IsNullOrWhiteSpace(snapshot.accountId))
+            {
+                return null;
+            }
+
+            return new PdsAccountRuntime(
+                snapshot.accountId,
+                Math.Max(0d, snapshot.balance),
+                Math.Max(0, snapshot.activationPeriodNumber));
+        }
+
+        private static PensionReserveRuntime AdvancePensionReserve(
+            PensionReserveRuntime currentReserve,
+            PeriodEconomyContext economyContext,
+            bool accrualActive)
+        {
+            var existingBalance = currentReserve != null
+                ? Math.Max(0d, currentReserve.Balance)
+                : 0d;
+            var nextBalance = existingBalance;
+
+            if (accrualActive && economyContext != null)
+            {
+                nextBalance += Math.Max(0d, economyContext.CurrentIncomeEcu) * ConsumerCreditMath.PensionContributionRate;
+            }
+
+            var hasEverBeenActive = accrualActive
+                || currentReserve != null && currentReserve.HasEverBeenActive
+                || nextBalance > 0.0001d;
+
+            return hasEverBeenActive
+                ? new PensionReserveRuntime(nextBalance, accrualActive, hasEverBeenActive)
+                : null;
         }
 
         private static IReadOnlyList<ConsumerCreditContractRuntime> AdvanceConsumerCreditsForNextPeriod(
@@ -753,7 +902,8 @@ namespace Game.Core.Application.Periods
             SessionPeriodRuntime configuredPeriod,
             JsonValue periodNode,
             JsonValue sessionRoot,
-            PeriodStatisticsRuntime periodStatistics)
+            PeriodStatisticsRuntime periodStatistics,
+            PensionReserveRuntime pensionReserve)
         {
             var result = new List<PeriodInfoBlockValue>();
 
@@ -845,6 +995,13 @@ namespace Game.Core.Application.Periods
                         "homeLoanRate"));
             }
 
+            var pensionInfoValue = CreatePensionInfoValue(pensionReserve);
+
+            if (pensionInfoValue != null)
+            {
+                AddInfoValueIfMissing(result, pensionInfoValue);
+            }
+
             return result;
         }
 
@@ -900,6 +1057,28 @@ namespace Game.Core.Application.Periods
             } */
 
             return result;
+        }
+
+        private static PeriodInfoBlockValue CreatePensionInfoValue(PensionReserveRuntime pensionReserve)
+        {
+            if (pensionReserve == null || !pensionReserve.HasEverBeenActive)
+            {
+                return null;
+            }
+
+            return pensionReserve.IsAccrualActive
+                ? new PeriodInfoBlockValue(
+                    "pension_savings",
+                    "Накопления на пенсию",
+                    Math.Max(0d, pensionReserve.Balance),
+                    " ECU",
+                    string.Empty)
+                : new PeriodInfoBlockValue(
+                    "pension_savings",
+                    "Накопления на пенсию",
+                    null,
+                    string.Empty,
+                    $"{Math.Max(0d, pensionReserve.Balance).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)} ECU (начисления заморожены)");
         }
 
         private PeriodInfoBlockValue CreateStatisticsInfoValue(
@@ -1014,7 +1193,7 @@ namespace Game.Core.Application.Periods
             return SortExpenses(result);
         }
 
-        private static IReadOnlyList<PeriodAssetDefinition> BuildAssetDefinitions(bool hasOwnedResidence)
+        private static IReadOnlyList<PeriodAssetDefinition> BuildAssetDefinitions(bool hasOwnedResidence, bool hasPdsAccount)
         {
             var result = new List<PeriodAssetDefinition>
             {
@@ -1046,6 +1225,18 @@ namespace Game.Core.Application.Periods
                     true,
                     Array.Empty<FundsSourceType>(),
                     "Собственное жильё участника."));
+            }
+
+            if (hasPdsAccount)
+            {
+                result.Add(new PeriodAssetDefinition(
+                    ConsumerCreditMath.PdsAssetId,
+                    "ПДС",
+                    PeriodAssetType.Pds,
+                    false,
+                    false,
+                    Array.Empty<FundsSourceType>(),
+                    "Программа долгосрочных сбережений."));
             }
 
             return result;
@@ -1661,6 +1852,8 @@ namespace Game.Core.Application.Periods
                 definition.EconomyContext,
                 definition.ConsumerCredits,
                 definition.ResidenceOwnership,
+                definition.PensionReserve,
+                definition.PdsAccount,
                 initialCashBalance ?? definition.InitialCashBalance,
                 initialDepositBalance ?? definition.InitialDepositBalance,
                 definition.SourceSummary);

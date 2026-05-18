@@ -29,7 +29,8 @@ namespace Game.Domain.GameFlow
         Generic,
         Cash,
         Deposit,
-        Apartment
+        Apartment,
+        Pds
     }
 
     public enum AssetOperationKind
@@ -91,6 +92,40 @@ namespace Game.Domain.GameFlow
             PurchasePeriodNumber = purchasePeriodNumber;
             PurchaseInflationMultiplier = purchaseInflationMultiplier;
             AcquisitionMode = acquisitionMode ?? string.Empty;
+        }
+    }
+
+    public sealed class PensionReserveRuntime
+    {
+        public double Balance { get; }
+        public bool IsAccrualActive { get; }
+        public bool HasEverBeenActive { get; }
+
+        public PensionReserveRuntime(
+            double balance,
+            bool isAccrualActive,
+            bool hasEverBeenActive)
+        {
+            Balance = balance;
+            IsAccrualActive = isAccrualActive;
+            HasEverBeenActive = hasEverBeenActive;
+        }
+    }
+
+    public sealed class PdsAccountRuntime
+    {
+        public string AccountId { get; }
+        public double Balance { get; }
+        public int ActivationPeriodNumber { get; }
+
+        public PdsAccountRuntime(
+            string accountId,
+            double balance,
+            int activationPeriodNumber)
+        {
+            AccountId = accountId ?? string.Empty;
+            Balance = balance;
+            ActivationPeriodNumber = activationPeriodNumber;
         }
     }
 
@@ -377,6 +412,8 @@ namespace Game.Domain.GameFlow
         public PeriodEconomyContext EconomyContext { get; }
         public IReadOnlyList<ConsumerCreditContractRuntime> ConsumerCredits { get; }
         public ResidenceOwnershipRuntime ResidenceOwnership { get; }
+        public PensionReserveRuntime PensionReserve { get; }
+        public PdsAccountRuntime PdsAccount { get; }
         public double InitialCashBalance { get; }
         public double InitialDepositBalance { get; }
         public string SourceSummary { get; }
@@ -391,6 +428,8 @@ namespace Game.Domain.GameFlow
             PeriodEconomyContext economyContext,
             IReadOnlyList<ConsumerCreditContractRuntime> consumerCredits,
             ResidenceOwnershipRuntime residenceOwnership,
+            PensionReserveRuntime pensionReserve,
+            PdsAccountRuntime pdsAccount,
             double initialCashBalance,
             double initialDepositBalance,
             string sourceSummary)
@@ -420,6 +459,8 @@ namespace Game.Domain.GameFlow
                 ? new List<ConsumerCreditContractRuntime>(consumerCredits)
                 : Array.Empty<ConsumerCreditContractRuntime>();
             ResidenceOwnership = residenceOwnership;
+            PensionReserve = pensionReserve;
+            PdsAccount = pdsAccount;
             InitialCashBalance = initialCashBalance;
             InitialDepositBalance = initialDepositBalance;
             SourceSummary = sourceSummary ?? string.Empty;

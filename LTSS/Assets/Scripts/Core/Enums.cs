@@ -19,6 +19,7 @@ public class Enums
         ConsumerCredit,
         Mortgage,
         ApartmentPurchase,
-        ApartmentSale
+        ApartmentSale,
+        Pds
     }
 }

@@ -53,9 +53,11 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
     private RectTransform _actionButtonsColumn;
     private RectTransform _consumerCreditRow;
     private RectTransform _housingActionRow;
+    private RectTransform _pdsActionRow;
     private Button _consumerCreditButton;
     private Button _apartmentButton;
     private Button _mortgageButton;
+    private Button _pdsButton;
     private RectTransform _expenseContent;
     private RectTransform _assetContent;
     private RectTransform _infoContent;
@@ -84,7 +86,8 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         Action<string, AssetOperationKind> onAssetAction,
         Action onConsumerCreditAction,
         Action onApartmentPurchaseAction,
-        Action onMortgageAction)
+        Action onMortgageAction,
+        Action onPdsAction)
     {
         EnsureBuilt();
         BindButton(_backButton, onBack);
@@ -92,6 +95,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         BindButton(_consumerCreditButton, onConsumerCreditAction);
         BindButton(_apartmentButton, onApartmentPurchaseAction);
         BindButton(_mortgageButton, onMortgageAction);
+        BindButton(_pdsButton, onPdsAction);
 
         if (runtimeState == null || !runtimeState.HasDefinition)
         {
@@ -201,7 +205,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         AddLayoutElement(_expenseContent.parent.gameObject, flexibleHeight: 1f);
 
         _actionButtonsColumn = CreateVerticalGroup(leftColumn, "ActionButtonsColumn", 12f, TextAnchor.UpperLeft);
-        AddLayoutElement(_actionButtonsColumn.gameObject, preferredHeight: 104f);
+        AddLayoutElement(_actionButtonsColumn.gameObject, preferredHeight: 162f);
         _consumerCreditRow = CreateRow(_actionButtonsColumn, "ConsumerCreditRow", 0f, TextAnchor.MiddleCenter);
         AddLayoutElement(_consumerCreditRow.gameObject, preferredHeight: 46f);
         _consumerCreditButton = RuntimeUiFactory.CreateSecondaryButton(_consumerCreditRow, "Потребительский кредит", 46f);
@@ -215,6 +219,11 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
 
         _assetContent = CreateSection(leftColumn, "Активы");
         _infoContent = CreateSection(rightColumn, "Параметры периода");
+        _pdsActionRow = CreateRow(_actionButtonsColumn, "PdsActionRow", 0f, TextAnchor.MiddleCenter);
+        AddLayoutElement(_pdsActionRow.gameObject, preferredHeight: 46f);
+        _pdsButton = RuntimeUiFactory.CreateSecondaryButton(_pdsActionRow, "ПДС", 46f);
+        AddLayoutElement(_pdsButton.gameObject, flexibleWidth: 1f, preferredHeight: 46f);
+
         BuildStatusSection(rightColumn);
     }
 
@@ -404,7 +413,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
 
     private void ApplyActionButtons(PeriodRuntimeState runtimeState)
     {
-        if (_consumerCreditButton == null || _mortgageButton == null || _apartmentButton == null)
+        if (_consumerCreditButton == null || _mortgageButton == null || _apartmentButton == null || _pdsButton == null)
         {
             return;
         }
@@ -423,11 +432,17 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         var ownsApartment = runtimeState != null
                             && runtimeState.HasDefinition
                             && runtimeState.Definition.ResidenceOwnership != null;
+        var canUsePds = runtimeState != null
+                        && runtimeState.HasDefinition
+                        && runtimeState.Definition.Meta != null
+                        && runtimeState.Definition.Meta.HasFeature("pds")
+                        && runtimeState.Definition.PensionReserve != null
+                        && runtimeState.Definition.PensionReserve.HasEverBeenActive;
         var canTakeMortgage = showMortgage && !ownsApartment && !HasActiveMortgage(runtimeState);
 
         if (_actionButtonsColumn != null)
         {
-            _actionButtonsColumn.gameObject.SetActive(showConsumerCredit || showMortgage && !ownsApartment);
+            _actionButtonsColumn.gameObject.SetActive(showConsumerCredit || showMortgage && !ownsApartment || canUsePds);
         }
 
         if (_consumerCreditRow != null)
@@ -440,12 +455,19 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
             _housingActionRow.gameObject.SetActive(showMortgage && !ownsApartment);
         }
 
+        if (_pdsActionRow != null)
+        {
+            _pdsActionRow.gameObject.SetActive(canUsePds);
+        }
+
         _consumerCreditButton.gameObject.SetActive(showConsumerCredit);
         _apartmentButton.gameObject.SetActive(showMortgage && !ownsApartment);
         _mortgageButton.gameObject.SetActive(canTakeMortgage);
+        _pdsButton.gameObject.SetActive(canUsePds);
         _consumerCreditButton.interactable = canEdit && showConsumerCredit;
         _apartmentButton.interactable = canEdit && showMortgage && !ownsApartment;
         _mortgageButton.interactable = canEdit && canTakeMortgage;
+        _pdsButton.interactable = canEdit && canUsePds;
     }
 
     private void ApplyAssets(
@@ -456,7 +478,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
             && runtimeState.FlowState != PeriodFlowState.PeriodClosed
             && runtimeState.FlowState != PeriodFlowState.LoadingData
             && runtimeState.FlowState != PeriodFlowState.PeriodClosing;
-        RebuildAssetCards(runtimeState.Summary.AssetBalances);
+        RebuildAdaptiveAssetCards(runtimeState.Summary.AssetBalances);
 
         foreach (var asset in runtimeState.Summary.AssetBalances)
         {
@@ -687,6 +709,162 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
                 Value = value
             };
         }
+    }
+
+    private void RebuildAdaptiveAssetCards(IReadOnlyList<PeriodAssetBalance> assets)
+    {
+        if (assets == null)
+        {
+            assets = Array.Empty<PeriodAssetBalance>();
+        }
+
+        ClearChildren(_assetContent);
+        _assetCards.Clear();
+
+        if (ShouldUseScrollableAssetsLayout(assets))
+        {
+            var primaryRow = CreateAssetsRow(_assetContent, "PrimaryAssetCards");
+
+            for (var index = 0; index < assets.Count; index++)
+            {
+                var asset = assets[index];
+
+                if (asset == null || !IsPrimaryAsset(asset))
+                {
+                    continue;
+                }
+
+                CreateAssetCard(primaryRow, asset);
+            }
+
+            var overflowArea = CreateRow(_assetContent, "OverflowAssetScrollArea", 8f, TextAnchor.UpperLeft);
+            var overflowLayout = overflowArea.GetComponent<HorizontalLayoutGroup>();
+            overflowLayout.childForceExpandWidth = false;
+            overflowLayout.childForceExpandHeight = true;
+            overflowLayout.childControlHeight = true;
+            AddLayoutElement(overflowArea.gameObject, flexibleHeight: 1f, minimumHeight: 190f);
+
+            var viewport = CreateRect("OverflowAssetViewport", overflowArea);
+            AddLayoutElement(viewport.gameObject, flexibleWidth: 1f, flexibleHeight: 1f, minimumHeight: 190f);
+            var viewportImage = viewport.gameObject.AddComponent<Image>();
+            viewportImage.color = Color.white;
+            var viewportMask = viewport.gameObject.AddComponent<Mask>();
+            viewportMask.showMaskGraphic = false;
+
+            var scrollRect = overflowArea.gameObject.AddComponent<ScrollRect>();
+            scrollRect.viewport = viewport;
+            scrollRect.horizontal = false;
+            scrollRect.vertical = true;
+            scrollRect.movementType = ScrollRect.MovementType.Clamped;
+            scrollRect.scrollSensitivity = 24f;
+            var verticalScrollbar = CreateVerticalScrollbar(overflowArea);
+            scrollRect.verticalScrollbar = verticalScrollbar;
+            scrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
+
+            var overflowContent = RuntimeUiFactory.CreateContentRoot(
+                "OverflowAssetContent",
+                viewport,
+                new RectOffset(0, 0, 0, 0),
+                10f);
+            overflowContent.anchorMin = new Vector2(0f, 1f);
+            overflowContent.anchorMax = new Vector2(1f, 1f);
+            overflowContent.pivot = new Vector2(0.5f, 1f);
+            overflowContent.anchoredPosition = Vector2.zero;
+            overflowContent.sizeDelta = new Vector2(0f, 0f);
+            var fitter = overflowContent.gameObject.AddComponent<ContentSizeFitter>();
+            fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+            scrollRect.content = overflowContent;
+
+            var overflowRow = CreateAssetsRow(overflowContent, "OverflowAssetCards");
+
+            for (var index = 0; index < assets.Count; index++)
+            {
+                var asset = assets[index];
+
+                if (asset == null || IsPrimaryAsset(asset))
+                {
+                    continue;
+                }
+
+                CreateAssetCard(overflowRow, asset);
+            }
+        }
+        else
+        {
+            var cardsRow = CreateAssetsRow(_assetContent, "AssetCards");
+
+            for (var index = 0; index < assets.Count; index++)
+            {
+                var asset = assets[index];
+
+                if (asset == null)
+                {
+                    continue;
+                }
+
+                CreateAssetCard(cardsRow, asset);
+            }
+        }
+    }
+
+    private RectTransform CreateAssetsRow(Transform parent, string name)
+    {
+        var row = CreateRow(parent, name, 14f, TextAnchor.MiddleCenter);
+        var layout = row.GetComponent<HorizontalLayoutGroup>();
+
+        if (layout != null)
+        {
+            layout.childForceExpandWidth = true;
+        }
+
+        return row;
+    }
+
+    private void CreateAssetCard(Transform parent, PeriodAssetBalance asset)
+    {
+        var card = RuntimeUiFactory.CreateSurface($"Asset_{asset.AssetId}", parent, RuntimeUiFactory.ElevatedSurfaceColor);
+        AddLayoutElement(card.gameObject, preferredWidth: 0f, preferredHeight: 166f, flexibleWidth: 1f);
+
+        var layout = card.gameObject.AddComponent<VerticalLayoutGroup>();
+        layout.padding = new RectOffset(16, 16, 16, 16);
+        layout.spacing = 8f;
+        layout.childAlignment = TextAnchor.UpperLeft;
+        layout.childControlWidth = true;
+        layout.childControlHeight = true;
+        layout.childForceExpandWidth = true;
+        layout.childForceExpandHeight = false;
+
+        var title = RuntimeUiFactory.CreateBodyText(card, string.Empty);
+        RuntimeUiFactory.ApplyTextStyle(title, FontStyle.Bold);
+        var value = RuntimeUiFactory.CreateValueText(card, "0", 28, TextAnchor.MiddleLeft);
+        var caption = RuntimeUiFactory.CreateCaption(card, string.Empty);
+        RuntimeUiFactory.AddFlexibleSpacer(card);
+        var actions = CreateRow(card, "Actions", 10f, TextAnchor.MiddleCenter);
+        var depositButton = RuntimeUiFactory.CreatePrimaryButton(actions, "Пополнить", 42f);
+        var withdrawButton = RuntimeUiFactory.CreateSecondaryButton(actions, "Снять", 42f);
+
+        _assetCards[asset.AssetId] = new AssetCardWidgets
+        {
+            AssetId = asset.AssetId,
+            TitleLabel = title,
+            ValueLabel = value,
+            CaptionLabel = caption,
+            DepositButton = depositButton,
+            WithdrawButton = withdrawButton
+        };
+    }
+
+    private static bool ShouldUseScrollableAssetsLayout(IReadOnlyList<PeriodAssetBalance> assets)
+    {
+        return assets != null && assets.Count > 3;
+    }
+
+    private static bool IsPrimaryAsset(PeriodAssetBalance asset)
+    {
+        return asset != null
+               && (asset.AssetType == PeriodAssetType.Cash
+                   || asset.AssetType == PeriodAssetType.Deposit);
     }
 
     private void SetEmptyState(string message)

@@ -658,6 +658,15 @@ namespace Game.Core.Application.Periods
                         : ConsumerCreditMath.CalculateResidenceCurrentValue(
                             definition.ResidenceOwnership,
                             definition.EconomyContext);
+                case PeriodAssetType.Pds:
+                    if (definition == null || definition.PdsAccount == null)
+                    {
+                        return 0d;
+                    }
+
+                    return definition.PdsAccount.ActivationPeriodNumber >= definition.Meta.PeriodNumber
+                        ? 0d
+                        : Math.Max(0d, definition.PdsAccount.Balance);
                 default:
                     return 0d;
             }
@@ -679,6 +688,10 @@ namespace Game.Core.Application.Periods
                     return ConsumerCreditMath.CalculateResidenceCurrentValue(
                         definition != null ? definition.ResidenceOwnership : null,
                         definition != null ? definition.EconomyContext : null);
+                case PeriodAssetType.Pds:
+                    return definition != null && definition.PdsAccount != null
+                        ? Math.Max(0d, definition.PdsAccount.Balance)
+                        : 0d;
                 default:
                     return 0d;
             }
