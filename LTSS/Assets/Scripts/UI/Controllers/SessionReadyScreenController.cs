@@ -151,10 +151,10 @@ public sealed class SessionReadyScreenController : ScreenController
             return false;
         }
 
-        if (!string.Equals(
-                runtimeState.Bootstrap.Participant.AssignedGroupCode,
-                "test",
-                StringComparison.OrdinalIgnoreCase))
+        var assignedGroupCode = runtimeState.Bootstrap.Participant.AssignedGroupCode;
+
+        if (!string.Equals(assignedGroupCode, "test", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(assignedGroupCode, "control", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }

@@ -48,6 +48,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
     private Text _validationLabel;
     private Text _statusTextLabel;
     private Text _emptyStateLabel;
+    private Text _expenseHintLabel;
     private Button _backButton;
     private Button _completeButton;
     private RectTransform _actionButtonsColumn;
@@ -64,9 +65,12 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
     private RectTransform _mainLayout;
     private RectTransform _footerRow;
     private ScrollRect _expenseScrollRect;
+    private Image _expenseTopFade;
+    private Image _expenseBottomFade;
     private readonly Dictionary<string, ExpenseRowWidgets> _expenseRows = new Dictionary<string, ExpenseRowWidgets>();
     private readonly Dictionary<string, AssetCardWidgets> _assetCards = new Dictionary<string, AssetCardWidgets>();
     private readonly Dictionary<string, InfoRowWidgets> _infoRows = new Dictionary<string, InfoRowWidgets>();
+    private bool _hasDismissedExpenseScrollHint;
     private bool _isBuilt;
     private static readonly Color UjePositiveColor = new Color32(84, 156, 110, 255);
 
@@ -416,6 +420,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         if (_expenseScrollRect != null)
         {
             LayoutRebuilder.ForceRebuildLayoutImmediate(_expenseContent);
+            UpdateExpenseScrollUi(runtimeState);
         }
     }
 
@@ -1175,7 +1180,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         return content;
     }
 
-    private static RectTransform CreateScrollableSection(Transform parent, string title, out ScrollRect scrollRect)
+    private RectTransform CreateScrollableSection(Transform parent, string title, out ScrollRect scrollRect)
     {
         var section = RuntimeUiFactory.CreateSurface(title, parent, RuntimeUiFactory.SurfaceColor);
         AddLayoutElement(section.gameObject, flexibleHeight: 1f);
@@ -1189,6 +1194,13 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         layout.childForceExpandHeight = false;
 
         RuntimeUiFactory.CreateBodyText(section, title);
+
+        var hintRow = CreateRow(section, "ExpenseHintRow", 8f, TextAnchor.MiddleLeft);
+        AddLayoutElement(hintRow.gameObject, preferredHeight: 22f);
+        _expenseHintLabel = RuntimeUiFactory.CreateCaption(hintRow, " ", TextAnchor.MiddleLeft);
+        _expenseHintLabel.horizontalOverflow = HorizontalWrapMode.Wrap;
+        _expenseHintLabel.verticalOverflow = VerticalWrapMode.Overflow;
+        _expenseHintLabel.color = RuntimeUiFactory.TextSecondaryColor;
 
         var scrollArea = CreateRow(section, "ExpenseScrollArea", 8f, TextAnchor.UpperLeft);
         var scrollAreaLayout = scrollArea.GetComponent<HorizontalLayoutGroup>();
@@ -1213,6 +1225,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         var verticalScrollbar = CreateVerticalScrollbar(scrollArea);
         scrollRect.verticalScrollbar = verticalScrollbar;
         scrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
+        scrollRect.onValueChanged.AddListener(_ => OnExpenseScrollChanged());
 
         var content = RuntimeUiFactory.CreateContentRoot(
             "ExpenseContent",
@@ -1228,6 +1241,9 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
         fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
         scrollRect.content = content;
+
+        _expenseTopFade = CreateExpenseFadeOverlay(viewport, "ExpenseTopFade", true);
+        _expenseBottomFade = CreateExpenseFadeOverlay(viewport, "ExpenseBottomFade", false);
         return content;
     }
 
@@ -1325,6 +1341,190 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         {
             Destroy(parent.GetChild(index).gameObject);
         }
+    }
+
+    private void OnExpenseScrollChanged()
+    {
+        if (_expenseScrollRect != null && _expenseScrollRect.verticalNormalizedPosition < 0.995f)
+        {
+            _hasDismissedExpenseScrollHint = true;
+        }
+
+        UpdateExpenseScrollVisuals();
+    }
+
+    private void UpdateExpenseScrollUi(PeriodRuntimeState runtimeState)
+    {
+        UpdateExpenseHint(runtimeState);
+        UpdateExpenseScrollVisuals();
+    }
+
+    private void UpdateExpenseHint(PeriodRuntimeState runtimeState)
+    {
+        if (_expenseHintLabel == null || runtimeState == null || !runtimeState.HasDefinition)
+        {
+            return;
+        }
+
+        var remainingRequiredCount = CountRemainingRequiredExpenses(runtimeState);
+        var hasOverflow = HasExpenseScrollOverflow();
+        var showScrollHint = hasOverflow && !_hasDismissedExpenseScrollHint;
+
+        if (remainingRequiredCount > 0 && showScrollHint)
+        {
+            _expenseHintLabel.text = $"Осталось заполнить {FormatRequiredExpenseCount(remainingRequiredCount)}. Прокрутите список, чтобы увидеть все расходы.";
+        }
+        else if (remainingRequiredCount > 0)
+        {
+            _expenseHintLabel.text = $"Осталось заполнить {FormatRequiredExpenseCount(remainingRequiredCount)}.";
+        }
+        else if (showScrollHint)
+        {
+            _expenseHintLabel.text = "Прокрутите список, чтобы увидеть все расходы.";
+        }
+        else
+        {
+            _expenseHintLabel.text = " ";
+        }
+    }
+
+    private void UpdateExpenseScrollVisuals()
+    {
+        var hasOverflow = HasExpenseScrollOverflow();
+        var showTopFade = hasOverflow
+                          && _expenseScrollRect != null
+                          && _expenseScrollRect.verticalNormalizedPosition < 0.995f;
+        var showBottomFade = hasOverflow
+                             && _expenseScrollRect != null
+                             && _expenseScrollRect.verticalNormalizedPosition > 0.005f;
+
+        if (_expenseTopFade != null)
+        {
+            _expenseTopFade.gameObject.SetActive(showTopFade);
+        }
+
+        if (_expenseBottomFade != null)
+        {
+            _expenseBottomFade.gameObject.SetActive(showBottomFade);
+        }
+    }
+
+    private bool HasExpenseScrollOverflow()
+    {
+        if (_expenseScrollRect == null || _expenseScrollRect.content == null || _expenseScrollRect.viewport == null)
+        {
+            return false;
+        }
+
+        var contentHeight = LayoutUtility.GetPreferredHeight(_expenseScrollRect.content);
+        var viewportHeight = _expenseScrollRect.viewport.rect.height;
+        return contentHeight > viewportHeight + 4f;
+    }
+
+    private static int CountRemainingRequiredExpenses(PeriodRuntimeState runtimeState)
+    {
+        if (runtimeState == null || !runtimeState.HasDefinition || runtimeState.Definition.ExpenseDefinitions == null)
+        {
+            return 0;
+        }
+
+        var count = 0;
+
+        for (var index = 0; index < runtimeState.Definition.ExpenseDefinitions.Count; index++)
+        {
+            var definition = runtimeState.Definition.ExpenseDefinitions[index];
+
+            if (definition == null || !definition.IsRequired || IsExpenseSatisfied(runtimeState, definition))
+            {
+                continue;
+            }
+
+            count++;
+        }
+
+        return count;
+    }
+
+    private static bool IsExpenseSatisfied(PeriodRuntimeState runtimeState, PeriodExpenseDefinition definition)
+    {
+        if (runtimeState == null || definition == null)
+        {
+            return true;
+        }
+
+        var state = FindExpenseState(runtimeState, definition.Id);
+        var amount = state != null ? Math.Max(0d, state.Amount) : 0d;
+
+        if (IsFixedAmountExpense(definition))
+        {
+            return Math.Abs(amount - definition.MinimumAmount) <= 0.01d;
+        }
+
+        var minimumAmount = definition.MinimumAmount > 0d
+            ? definition.MinimumAmount
+            : 0.01d;
+        return amount + 0.01d >= minimumAmount;
+    }
+
+    private static string FormatRequiredExpenseCount(int count)
+    {
+        if (count <= 1)
+        {
+            return "1 обязательный расход";
+        }
+
+        var remainder10 = count % 10;
+        var remainder100 = count % 100;
+
+        if (remainder10 >= 2 && remainder10 <= 4 && (remainder100 < 12 || remainder100 > 14))
+        {
+            return $"{count} обязательных расхода";
+        }
+
+        return $"{count} обязательных расходов";
+    }
+
+    private static Image CreateExpenseFadeOverlay(Transform parent, string name, bool isTop)
+    {
+        var root = CreateRect(name, parent);
+        root.SetAsLastSibling();
+        root.anchorMin = isTop ? new Vector2(0f, 1f) : new Vector2(0f, 0f);
+        root.anchorMax = isTop ? new Vector2(1f, 1f) : new Vector2(1f, 0f);
+        root.pivot = isTop ? new Vector2(0.5f, 1f) : new Vector2(0.5f, 0f);
+        root.sizeDelta = new Vector2(0f, 24f);
+        root.anchoredPosition = Vector2.zero;
+
+        var image = root.gameObject.AddComponent<Image>();
+        image.color = new Color(
+            RuntimeUiFactory.SurfaceColor.r,
+            RuntimeUiFactory.SurfaceColor.g,
+            RuntimeUiFactory.SurfaceColor.b,
+            0.68f);
+        image.raycastTarget = false;
+
+        CreateFadeBand(root, "BandStrong", isTop ? 0f : 14f, 12f, 0.34f);
+        CreateFadeBand(root, "BandMedium", isTop ? 8f : 7f, 10f, 0.22f);
+        CreateFadeBand(root, "BandSoft", isTop ? 16f : 1f, 8f, 0.12f);
+        root.gameObject.SetActive(false);
+        return image;
+    }
+
+    private static void CreateFadeBand(Transform parent, string name, float topOffset, float height, float alpha)
+    {
+        var band = CreateRect(name, parent);
+        band.anchorMin = new Vector2(0f, 1f);
+        band.anchorMax = new Vector2(1f, 1f);
+        band.pivot = new Vector2(0.5f, 1f);
+        band.anchoredPosition = new Vector2(0f, -topOffset);
+        band.sizeDelta = new Vector2(0f, height);
+
+        var image = band.gameObject.AddComponent<Image>();
+        image.color = new Color(
+            RuntimeUiFactory.SurfaceColor.r,
+            RuntimeUiFactory.SurfaceColor.g,
+            RuntimeUiFactory.SurfaceColor.b,
+            alpha);
+        image.raycastTarget = false;
     }
 
     private static void BindButton(Button button, Action callback)
