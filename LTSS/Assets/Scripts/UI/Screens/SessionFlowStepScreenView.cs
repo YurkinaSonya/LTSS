@@ -483,7 +483,7 @@ public sealed class SessionFlowStepScreenView : ScreenView
             var rowBackground = row.gameObject.AddComponent<Image>();
             rowBackground.color = new Color(1f, 1f, 1f, 0.001f);
 
-            CreateSelectionBox(row, out var checkmark);
+            CreateSelectionBox(row, !allowMultiple, out var checkmark);
             optionBinding.Toggle = ConfigureToggle(row.gameObject, rowBackground, checkmark, toggleGroup, allowMultiple);
 
             var label = RuntimeUiFactory.CreateBodyText(row, option.Label);
@@ -500,6 +500,12 @@ public sealed class SessionFlowStepScreenView : ScreenView
 
             binding.Options.Add(optionBinding);
             optionBinding.Toggle.onValueChanged.AddListener(_ => RefreshOtherInputs(binding));
+        }
+
+        if (toggleGroup != null)
+        {
+            toggleGroup.allowSwitchOff = true;
+            toggleGroup.SetAllTogglesOff();
         }
 
         RefreshOtherInputs(binding);
@@ -549,7 +555,7 @@ public sealed class SessionFlowStepScreenView : ScreenView
             label.verticalOverflow = VerticalWrapMode.Overflow;
             optionBinding.Label = label;
 
-            CreateSelectionBox(column, out var checkmark);
+            CreateSelectionBox(column, true, out var checkmark);
             optionBinding.Toggle = ConfigureToggle(column.gameObject, columnBackground, checkmark, toggleGroup, false);
 
             if (option.IsOther)
@@ -560,6 +566,12 @@ public sealed class SessionFlowStepScreenView : ScreenView
 
             binding.Options.Add(optionBinding);
             optionBinding.Toggle.onValueChanged.AddListener(_ => RefreshOtherInputs(binding));
+        }
+
+        if (toggleGroup != null)
+        {
+            toggleGroup.allowSwitchOff = true;
+            toggleGroup.SetAllTogglesOff();
         }
 
         RefreshOtherInputs(binding);
@@ -601,7 +613,7 @@ public sealed class SessionFlowStepScreenView : ScreenView
         return root;
     }
 
-    private static void CreateSelectionBox(Transform parent, out Image checkmark)
+    private static void CreateSelectionBox(Transform parent, bool useCircleStyle, out Graphic checkmark)
     {
         var box = CreateRect("Box", parent);
         var boxLayout = box.gameObject.AddComponent<LayoutElement>();
@@ -610,22 +622,48 @@ public sealed class SessionFlowStepScreenView : ScreenView
         boxLayout.minWidth = 24f;
         boxLayout.minHeight = 24f;
 
+        if (useCircleStyle)
+        {
+            var outlineText = RuntimeUiFactory.CreateBodyText(box, "○", TextAnchor.MiddleCenter);
+            outlineText.color = RuntimeUiFactory.BorderColor;
+            outlineText.fontSize = 24;
+            outlineText.raycastTarget = false;
+            var outlineRect = outlineText.rectTransform;
+            outlineRect.anchorMin = Vector2.zero;
+            outlineRect.anchorMax = Vector2.one;
+            outlineRect.offsetMin = Vector2.zero;
+            outlineRect.offsetMax = Vector2.zero;
+
+            var markText = RuntimeUiFactory.CreateBodyText(box, "●", TextAnchor.MiddleCenter);
+            markText.color = RuntimeUiFactory.PrimaryColor;
+            markText.fontSize = 13;
+            markText.raycastTarget = false;
+            var markRect = markText.rectTransform;
+            markRect.anchorMin = Vector2.zero;
+            markRect.anchorMax = Vector2.one;
+            markRect.offsetMin = Vector2.zero;
+            markRect.offsetMax = Vector2.zero;
+            checkmark = markText;
+            return;
+        }
+
         var boxImage = box.gameObject.AddComponent<Image>();
         boxImage.color = RuntimeUiFactory.ElevatedSurfaceColor;
         var outline = box.gameObject.AddComponent<Outline>();
         outline.effectColor = RuntimeUiFactory.BorderColor;
         outline.effectDistance = new Vector2(1f, -1f);
 
-        var mark = CreateRect("Checkmark", box);
-        mark.anchorMin = new Vector2(0.5f, 0.5f);
-        mark.anchorMax = new Vector2(0.5f, 0.5f);
-        mark.pivot = new Vector2(0.5f, 0.5f);
-        mark.sizeDelta = new Vector2(12f, 12f);
-        mark.anchoredPosition = Vector2.zero;
+        var squareMarkText = RuntimeUiFactory.CreateBodyText(box, "✓", TextAnchor.MiddleCenter);
+        squareMarkText.color = RuntimeUiFactory.PrimaryColor;
+        squareMarkText.fontSize = 18;
+        squareMarkText.raycastTarget = false;
+        var mark = squareMarkText.rectTransform;
+        mark.anchorMin = Vector2.zero;
+        mark.anchorMax = Vector2.one;
+        mark.offsetMin = Vector2.zero;
+        mark.offsetMax = Vector2.zero;
 
-        checkmark = mark.gameObject.AddComponent<Image>();
-        checkmark.color = RuntimeUiFactory.PrimaryColor;
-        checkmark.raycastTarget = false;
+        checkmark = squareMarkText;
     }
 
     private static Toggle ConfigureToggle(
@@ -656,11 +694,11 @@ public sealed class SessionFlowStepScreenView : ScreenView
             0.55f);
         toggle.colors = colors;
         toggle.toggleTransition = Toggle.ToggleTransition.Fade;
-        toggle.isOn = false;
+        toggle.SetIsOnWithoutNotify(false);
 
         if (toggleGroup != null)
         {
-            toggleGroup.allowSwitchOff = allowSwitchOff;
+            toggleGroup.allowSwitchOff = true;
         }
 
         return toggle;
