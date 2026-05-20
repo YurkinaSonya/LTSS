@@ -349,6 +349,12 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
                 widgets.MetaLabel.color = RuntimeUiFactory.PrimaryColor;
             }
 
+            if (string.Equals(expenseDefinition.Id, "education", StringComparison.Ordinal))
+            {
+                widgets.MetaLabel.text = BuildEducationMeta(runtimeState, expenseState);
+                widgets.MetaLabel.color = RuntimeUiFactory.PrimaryColor;
+            }
+
             if (widgets.RequiredBadge != null)
             {
                 var showRequiredBadge = expenseDefinition.IsRequired && expenseDefinition.MinimumAmount > 0d;
@@ -370,7 +376,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
             SyncInputFieldText(widgets.AmountInput, amountText);
 
             widgets.AmountInput.onValueChanged.AddListener(value => onExpenseAmountChanged?.Invoke(expenseDefinition.Id, value));
-            widgets.AmountInput.interactable = canEdit;
+            widgets.AmountInput.interactable = canEdit && !IsCompletedEducationExpense(runtimeState, expenseDefinition);
 
             if (widgets.ApplyRequiredAmountButton != null)
             {
@@ -391,7 +397,9 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
 
             widgets.SourceDropdown.onValueChanged.RemoveAllListeners();
             RuntimeUiFactory.SetDropdownOptions(widgets.SourceDropdown, optionLabels, selectedIndex);
-            widgets.SourceDropdown.interactable = canEdit && allowedSources.Count > 1;
+            widgets.SourceDropdown.interactable = canEdit
+                                                 && allowedSources.Count > 1
+                                                 && !IsCompletedEducationExpense(runtimeState, expenseDefinition);
 
             if (allowedSources.Count > 0)
             {
@@ -1025,6 +1033,53 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         return string.Equals(infoValue.Id, "income_growth", StringComparison.Ordinal)
             ? EcuFormatter.FormatGrowthPercent(infoValue.NumericValue, infoValue.RawText)
             : infoValue.DisplayValue;
+    }
+
+    private static bool IsCompletedEducationExpense(
+        PeriodRuntimeState runtimeState,
+        PeriodExpenseDefinition expenseDefinition)
+    {
+        return runtimeState != null
+               && runtimeState.HasDefinition
+               && expenseDefinition != null
+               && string.Equals(expenseDefinition.Id, "education", StringComparison.Ordinal)
+               && runtimeState.Definition.EducationGoal != null
+               && runtimeState.Definition.EducationGoal.IsCompleted;
+    }
+
+    private static string BuildEducationMeta(
+        PeriodRuntimeState runtimeState,
+        PeriodExpenseState expenseState)
+    {
+        var goal = runtimeState != null && runtimeState.HasDefinition
+            ? runtimeState.Definition.EducationGoal
+            : null;
+        var targetAmount = goal != null && goal.TargetAmount > 0d
+            ? goal.TargetAmount
+            : ConsumerCreditMath.EducationTargetAmount;
+        var committedAmount = goal != null
+            ? Math.Max(0d, goal.AccumulatedAmount)
+            : 0d;
+        var currentContribution = expenseState != null
+            ? Math.Max(0d, expenseState.Amount)
+            : 0d;
+        var displayedProgress = Math.Min(targetAmount, committedAmount + currentContribution);
+
+        if (displayedProgress + 0.01d < targetAmount)
+        {
+            return $"{FormatMoney(displayedProgress)} / {FormatMoney(targetAmount)}";
+        }
+
+        if (goal != null && goal.IncomeBoostStartPeriodNumber > 0)
+        {
+            var currentPeriodNumber = runtimeState != null ? runtimeState.PeriodNumber : 0;
+
+            return currentPeriodNumber >= goal.IncomeBoostStartPeriodNumber
+                ? "цель достигнута | доход x1.5"
+                : $"цель достигнута | доход x1.5 с {goal.IncomeBoostStartPeriodNumber} пер.";
+        }
+
+        return "цель достигнута";
     }
 
     private static string FormatFlow(PeriodFlowState flowState)

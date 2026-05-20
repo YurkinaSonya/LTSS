@@ -14,6 +14,9 @@ namespace Game.Core.Application.Periods
         public const double MortgagePrincipal = 240d;
         public const double ApartmentOwnershipUjeBonus = 20d;
         public const double PensionContributionRate = 0.06d;
+        public const double EducationTargetAmount = 130d;
+        public const double EducationIncomeMultiplier = 1.5d;
+        public const int EducationIncomeDelayPeriods = 4;
         public const string ApartmentResidenceId = "apartment";
         public const string PdsAssetId = "pds";
         public const string DirectApartmentPurchaseMode = "direct";

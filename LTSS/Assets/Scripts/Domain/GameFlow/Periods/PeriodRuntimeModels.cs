@@ -129,6 +129,27 @@ namespace Game.Domain.GameFlow
         }
     }
 
+    public sealed class EducationGoalRuntime
+    {
+        public double AccumulatedAmount { get; }
+        public double TargetAmount { get; }
+        public int GoalReachedPeriodNumber { get; }
+        public int IncomeBoostStartPeriodNumber { get; }
+        public bool IsCompleted => GoalReachedPeriodNumber > 0 || AccumulatedAmount >= TargetAmount;
+
+        public EducationGoalRuntime(
+            double accumulatedAmount,
+            double targetAmount,
+            int goalReachedPeriodNumber,
+            int incomeBoostStartPeriodNumber)
+        {
+            AccumulatedAmount = accumulatedAmount;
+            TargetAmount = targetAmount;
+            GoalReachedPeriodNumber = goalReachedPeriodNumber;
+            IncomeBoostStartPeriodNumber = incomeBoostStartPeriodNumber;
+        }
+    }
+
     public sealed class PeriodMeta
     {
         public string PeriodId { get; }
@@ -414,6 +435,7 @@ namespace Game.Domain.GameFlow
         public ResidenceOwnershipRuntime ResidenceOwnership { get; }
         public PensionReserveRuntime PensionReserve { get; }
         public PdsAccountRuntime PdsAccount { get; }
+        public EducationGoalRuntime EducationGoal { get; }
         public double InitialCashBalance { get; }
         public double InitialDepositBalance { get; }
         public string SourceSummary { get; }
@@ -430,6 +452,7 @@ namespace Game.Domain.GameFlow
             ResidenceOwnershipRuntime residenceOwnership,
             PensionReserveRuntime pensionReserve,
             PdsAccountRuntime pdsAccount,
+            EducationGoalRuntime educationGoal,
             double initialCashBalance,
             double initialDepositBalance,
             string sourceSummary)
@@ -461,6 +484,7 @@ namespace Game.Domain.GameFlow
             ResidenceOwnership = residenceOwnership;
             PensionReserve = pensionReserve;
             PdsAccount = pdsAccount;
+            EducationGoal = educationGoal;
             InitialCashBalance = initialCashBalance;
             InitialDepositBalance = initialDepositBalance;
             SourceSummary = sourceSummary ?? string.Empty;

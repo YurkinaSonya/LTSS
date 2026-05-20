@@ -35,6 +35,7 @@ namespace Game.Core.Application.Session
         public ResidenceOwnershipSnapshotDto residenceOwnership;
         public PensionReserveSnapshotDto pensionReserve;
         public PdsAccountSnapshotDto pdsAccount;
+        public EducationGoalSnapshotDto educationGoal;
         public PeriodExpenseStateSnapshotDto[] expenses;
         public PeriodAssetOperationSnapshotDto[] assetOperations;
         public bool isCheckpointSubmitted;
@@ -100,5 +101,14 @@ namespace Game.Core.Application.Session
         public string accountId;
         public double balance;
         public int activationPeriodNumber;
+    }
+
+    [Serializable]
+    public sealed class EducationGoalSnapshotDto
+    {
+        public double accumulatedAmount;
+        public double targetAmount;
+        public int goalReachedPeriodNumber;
+        public int incomeBoostStartPeriodNumber;
     }
 }

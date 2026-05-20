@@ -1241,6 +1241,7 @@ namespace Game.Core.Application.Periods
                 residenceOwnership = BuildResidenceOwnershipSnapshot(state.Definition.ResidenceOwnership),
                 pensionReserve = BuildPensionReserveSnapshot(state.Definition.PensionReserve),
                 pdsAccount = BuildPdsAccountSnapshot(state.Definition.PdsAccount),
+                educationGoal = BuildEducationGoalSnapshot(state.Definition.EducationGoal),
                 expenses = BuildExpenseSnapshots(state.Expenses),
                 assetOperations = BuildOperationSnapshots(state.AssetOperations),
                 isCheckpointSubmitted = state.IsCheckpointSubmitted,
@@ -1467,6 +1468,14 @@ namespace Game.Core.Application.Periods
                 && Math.Abs(targetAmount - definition.MinimumAmount) > 0.01d)
             {
                 validationMessage = $"Для «{definition.Title}» доступна только фиксированная сумма {EcuFormatter.FormatAmount(definition.MinimumAmount)}.";
+                return false;
+            }
+
+            if (!IsFixedAmountExpense(definition)
+                && definition.MaximumAmount > 0.01d
+                && targetAmount > definition.MaximumAmount + 0.01d)
+            {
+                validationMessage = $"Для «{definition.Title}» доступен максимум {EcuFormatter.FormatAmount(definition.MaximumAmount)}.";
                 return false;
             }
 
@@ -2067,6 +2076,8 @@ namespace Game.Core.Application.Periods
             bool replacePensionReserve = false,
             PdsAccountRuntime pdsAccount = null,
             bool replacePdsAccount = false,
+            EducationGoalRuntime educationGoal = null,
+            bool replaceEducationGoal = false,
             IReadOnlyList<PeriodExpenseDefinition> expenseDefinitions = null,
             IReadOnlyList<PeriodAssetDefinition> assetDefinitions = null,
             double? initialCashBalance = null,
@@ -2104,6 +2115,9 @@ namespace Game.Core.Application.Periods
                 replacePdsAccount
                     ? pdsAccount
                     : pdsAccount ?? definition.PdsAccount,
+                replaceEducationGoal
+                    ? educationGoal
+                    : educationGoal ?? definition.EducationGoal,
                 initialCashBalance ?? definition.InitialCashBalance,
                 initialDepositBalance ?? definition.InitialDepositBalance,
                 definition.SourceSummary);
@@ -2118,6 +2132,8 @@ namespace Game.Core.Application.Periods
             bool replacePensionReserve = false,
             PdsAccountRuntime pdsAccount = null,
             bool replacePdsAccount = false,
+            EducationGoalRuntime educationGoal = null,
+            bool replaceEducationGoal = false,
             double? initialCashBalance = null,
             double? initialDepositBalance = null,
             double? accumulatedUje = null,
@@ -2138,6 +2154,9 @@ namespace Game.Core.Application.Periods
             var targetPdsAccount = replacePdsAccount
                 ? pdsAccount
                 : pdsAccount ?? definition.PdsAccount;
+            var targetEducationGoal = replaceEducationGoal
+                ? educationGoal
+                : educationGoal ?? definition.EducationGoal;
             var targetEconomyContext = economyContext ?? definition.EconomyContext;
             return CloneDefinition(
                 definition,
@@ -2151,6 +2170,8 @@ namespace Game.Core.Application.Periods
                 replacePensionReserve: true,
                 pdsAccount: targetPdsAccount,
                 replacePdsAccount: true,
+                educationGoal: targetEducationGoal,
+                replaceEducationGoal: true,
                 expenseDefinitions: BuildResidenceAwareExpenseDefinitions(
                     definition.ExpenseDefinitions,
                     targetEconomyContext,
@@ -2552,6 +2573,22 @@ namespace Game.Core.Application.Periods
                 accountId = pdsAccount.AccountId,
                 balance = pdsAccount.Balance,
                 activationPeriodNumber = pdsAccount.ActivationPeriodNumber
+            };
+        }
+
+        private static EducationGoalSnapshotDto BuildEducationGoalSnapshot(EducationGoalRuntime educationGoal)
+        {
+            if (educationGoal == null)
+            {
+                return null;
+            }
+
+            return new EducationGoalSnapshotDto
+            {
+                accumulatedAmount = educationGoal.AccumulatedAmount,
+                targetAmount = educationGoal.TargetAmount,
+                goalReachedPeriodNumber = educationGoal.GoalReachedPeriodNumber,
+                incomeBoostStartPeriodNumber = educationGoal.IncomeBoostStartPeriodNumber
             };
         }
 

@@ -238,6 +238,10 @@ namespace Game.Core.Application.Periods
             var residenceOwnership = isFirstMainPeriod
                 ? null
                 : ResolveResidenceOwnership(runId, periodNumber);
+            var educationGoal = isFirstMainPeriod
+                ? null
+                : ResolveEducationGoal(runId, periodNumber, configuredPeriod);
+            economyContext = ApplyEducationIncomeBoost(economyContext, educationGoal, periodNumber);
             var pensionReserve = ResolvePensionReserve(
                 runId,
                 periodNumber,
@@ -251,7 +255,9 @@ namespace Game.Core.Application.Periods
                 periodNode,
                 sessionRoot,
                 economyContext,
-                residenceOwnership != null);
+                residenceOwnership != null,
+                configuredPeriod != null && configuredPeriod.HasFeature("education"),
+                educationGoal);
             var assetDefinitions = BuildAssetDefinitions(residenceOwnership != null, pdsAccount != null);
             var activeCredits = isFirstMainPeriod
                 ? Array.Empty<ConsumerCreditContractRuntime>()
@@ -287,6 +293,7 @@ namespace Game.Core.Application.Periods
                 residenceOwnership,
                 pensionReserve,
                 pdsAccount,
+                educationGoal,
                 initialCash,
                 initialDeposit,
                 periodNode.Kind != JsonValueKind.Null
@@ -584,6 +591,57 @@ namespace Game.Core.Application.Periods
                 : null;
         }
 
+        private EducationGoalRuntime ResolveEducationGoal(
+            string runId,
+            int periodNumber,
+            SessionPeriodRuntime configuredPeriod)
+        {
+            var educationFeatureActive = configuredPeriod != null && configuredPeriod.HasFeature("education");
+
+            if (_persistenceService == null
+                || _serializer == null
+                || string.IsNullOrWhiteSpace(runId)
+                || periodNumber <= 0
+                || !_persistenceService.TryLoadPeriodSnapshot(out var snapshot)
+                || snapshot == null
+                || !string.Equals(snapshot.runId, runId, StringComparison.Ordinal)
+                || string.IsNullOrWhiteSpace(snapshot.rawPeriodStateJson))
+            {
+                return educationFeatureActive
+                    ? CreateEmptyEducationGoal()
+                    : null;
+            }
+
+            if (!_serializer.TryDeserialize(
+                    snapshot.rawPeriodStateJson,
+                    out PeriodRuntimeSnapshotDto dto,
+                    out var deserializeError))
+            {
+                _logger.Warning($"Failed to deserialize persisted education snapshot. {deserializeError}");
+                return educationFeatureActive
+                    ? CreateEmptyEducationGoal()
+                    : null;
+            }
+
+            var restoredGoal = RestoreEducationGoal(dto != null ? dto.educationGoal : null);
+
+            if (snapshot.periodNumber == periodNumber)
+            {
+                return restoredGoal ?? (educationFeatureActive ? CreateEmptyEducationGoal() : null);
+            }
+
+            if (snapshot.isCheckpointSubmitted && snapshot.periodNumber == periodNumber - 1)
+            {
+                var advancedGoal = AdvanceEducationGoal(
+                    restoredGoal,
+                    snapshot.periodNumber,
+                    dto != null ? dto.expenses : null);
+                return advancedGoal ?? (educationFeatureActive ? CreateEmptyEducationGoal() : null);
+            }
+
+            return restoredGoal ?? (educationFeatureActive ? CreateEmptyEducationGoal() : null);
+        }
+
         private static IReadOnlyList<ConsumerCreditContractRuntime> RestoreConsumerCredits(
             IReadOnlyList<ConsumerCreditContractSnapshotDto> snapshots)
         {
@@ -667,6 +725,32 @@ namespace Game.Core.Application.Periods
                 Math.Max(0, snapshot.activationPeriodNumber));
         }
 
+        private static EducationGoalRuntime RestoreEducationGoal(EducationGoalSnapshotDto snapshot)
+        {
+            if (snapshot == null)
+            {
+                return null;
+            }
+
+            var targetAmount = snapshot.targetAmount > 0d
+                ? snapshot.targetAmount
+                : ConsumerCreditMath.EducationTargetAmount;
+            var accumulatedAmount = Math.Max(0d, Math.Min(targetAmount, snapshot.accumulatedAmount));
+
+            if (accumulatedAmount <= 0.0001d
+                && snapshot.goalReachedPeriodNumber <= 0
+                && snapshot.incomeBoostStartPeriodNumber <= 0)
+            {
+                return null;
+            }
+
+            return new EducationGoalRuntime(
+                accumulatedAmount,
+                targetAmount,
+                Math.Max(0, snapshot.goalReachedPeriodNumber),
+                Math.Max(0, snapshot.incomeBoostStartPeriodNumber));
+        }
+
         private static PensionReserveRuntime AdvancePensionReserve(
             PensionReserveRuntime currentReserve,
             PeriodEconomyContext economyContext,
@@ -689,6 +773,73 @@ namespace Game.Core.Application.Periods
             return hasEverBeenActive
                 ? new PensionReserveRuntime(nextBalance, accrualActive, hasEverBeenActive)
                 : null;
+        }
+
+        private static EducationGoalRuntime AdvanceEducationGoal(
+            EducationGoalRuntime currentGoal,
+            int closedPeriodNumber,
+            IReadOnlyList<PeriodExpenseStateSnapshotDto> expenseSnapshots)
+        {
+            var baseGoal = currentGoal ?? CreateEmptyEducationGoal();
+            var targetAmount = baseGoal.TargetAmount > 0d
+                ? baseGoal.TargetAmount
+                : ConsumerCreditMath.EducationTargetAmount;
+            var currentContribution = ResolveEducationContribution(expenseSnapshots);
+            var accumulatedAmount = Math.Min(
+                targetAmount,
+                Math.Max(0d, baseGoal.AccumulatedAmount) + Math.Max(0d, currentContribution));
+            var goalReachedPeriodNumber = baseGoal.GoalReachedPeriodNumber;
+            var incomeBoostStartPeriodNumber = baseGoal.IncomeBoostStartPeriodNumber;
+
+            if (goalReachedPeriodNumber <= 0
+                && accumulatedAmount + 0.0001d >= targetAmount)
+            {
+                goalReachedPeriodNumber = closedPeriodNumber;
+                incomeBoostStartPeriodNumber = closedPeriodNumber + ConsumerCreditMath.EducationIncomeDelayPeriods;
+            }
+
+            if (accumulatedAmount <= 0.0001d
+                && goalReachedPeriodNumber <= 0
+                && incomeBoostStartPeriodNumber <= 0)
+            {
+                return null;
+            }
+
+            return new EducationGoalRuntime(
+                accumulatedAmount,
+                targetAmount,
+                goalReachedPeriodNumber,
+                incomeBoostStartPeriodNumber);
+        }
+
+        private static double ResolveEducationContribution(IReadOnlyList<PeriodExpenseStateSnapshotDto> expenseSnapshots)
+        {
+            if (expenseSnapshots == null || expenseSnapshots.Count == 0)
+            {
+                return 0d;
+            }
+
+            for (var index = 0; index < expenseSnapshots.Count; index++)
+            {
+                var snapshot = expenseSnapshots[index];
+
+                if (snapshot != null
+                    && string.Equals(snapshot.expenseId, "education", StringComparison.Ordinal))
+                {
+                    return Math.Max(0d, snapshot.amount);
+                }
+            }
+
+            return 0d;
+        }
+
+        private static EducationGoalRuntime CreateEmptyEducationGoal()
+        {
+            return new EducationGoalRuntime(
+                0d,
+                ConsumerCreditMath.EducationTargetAmount,
+                0,
+                0);
         }
 
         private static IReadOnlyList<ConsumerCreditContractRuntime> AdvanceConsumerCreditsForNextPeriod(
@@ -1136,7 +1287,9 @@ namespace Game.Core.Application.Periods
             JsonValue periodNode,
             JsonValue sessionRoot,
             PeriodEconomyContext economyContext,
-            bool hasOwnedResidence)
+            bool hasOwnedResidence,
+            bool hasEducationFeature,
+            EducationGoalRuntime educationGoal)
         {
             var result = new List<PeriodExpenseDefinition>();
             var expenseNodes = periodNode.FindArrayDescendant("expenses", "availableExpenses", "expenseDefinitions", "spendingCategories");
@@ -1215,6 +1368,11 @@ namespace Game.Core.Application.Periods
 
             EnsureExpense(result, "leisure", economyContext);
             EnsureExpense(result, "holiday", economyContext);
+
+            if (hasEducationFeature)
+            {
+                EnsureEducationExpense(result, educationGoal);
+            }
 
             return SortExpenses(result);
         }
@@ -1360,6 +1518,36 @@ namespace Game.Core.Application.Periods
                 cashValueMultiplier,
                 depositValueMultiplier,
                 hasPermanentIncomeLoss);
+        }
+
+        private static PeriodEconomyContext ApplyEducationIncomeBoost(
+            PeriodEconomyContext economyContext,
+            EducationGoalRuntime educationGoal,
+            int periodNumber)
+        {
+            if (economyContext == null
+                || educationGoal == null
+                || educationGoal.IncomeBoostStartPeriodNumber <= 0
+                || periodNumber < educationGoal.IncomeBoostStartPeriodNumber)
+            {
+                return economyContext;
+            }
+
+            return new PeriodEconomyContext(
+                economyContext.CurrentPeriodNumber,
+                economyContext.HistoricalYear,
+                economyContext.NominalIncomeGrowth,
+                economyContext.Inflation,
+                economyContext.DepositRate,
+                economyContext.CreditRate,
+                economyContext.MortgageRate,
+                economyContext.BaseIncomeEcu,
+                economyContext.CurrentIncomeEcu * ConsumerCreditMath.EducationIncomeMultiplier,
+                economyContext.ExpenseInflationMultiplier,
+                economyContext.CurrentInflationMultiplier,
+                economyContext.CashValueMultiplier,
+                economyContext.DepositValueMultiplier,
+                economyContext.HasPermanentIncomeLoss);
         }
 
         private bool HasIncomeLossForPeriod(
@@ -1600,6 +1788,46 @@ namespace Game.Core.Application.Periods
             definitions.Add(ApplyEconomyContextToExpenseDefinition(GetFallbackExpense(expenseId), economyContext));
         }
 
+        private static void EnsureEducationExpense(
+            ICollection<PeriodExpenseDefinition> definitions,
+            EducationGoalRuntime educationGoal)
+        {
+            var toRemove = new List<PeriodExpenseDefinition>();
+
+            foreach (var definition in definitions)
+            {
+                if (definition != null && string.Equals(definition.Id, "education", StringComparison.Ordinal))
+                {
+                    toRemove.Add(definition);
+                }
+            }
+
+            for (var index = 0; index < toRemove.Count; index++)
+            {
+                definitions.Remove(toRemove[index]);
+            }
+
+            var accumulatedAmount = educationGoal != null
+                ? Math.Max(0d, educationGoal.AccumulatedAmount)
+                : 0d;
+            var targetAmount = educationGoal != null && educationGoal.TargetAmount > 0d
+                ? educationGoal.TargetAmount
+                : ConsumerCreditMath.EducationTargetAmount;
+            var remainingAmount = Math.Max(0d, targetAmount - accumulatedAmount);
+
+            definitions.Add(new PeriodExpenseDefinition(
+                "education",
+                "Образование",
+                false,
+                0d,
+                0d,
+                remainingAmount,
+                new[] { FundsSourceType.CurrentIncome, FundsSourceType.Cash, FundsSourceType.Deposit },
+                0d,
+                targetAmount,
+                "Долгосрочная цель на повышение дохода."));
+        }
+
         private static void AddInfoValueIfMissing(
             ICollection<PeriodInfoBlockValue> values,
             PeriodInfoBlockValue candidate)
@@ -1657,7 +1885,8 @@ namespace Game.Core.Application.Periods
                 "goods_services",
                 "housing_rent",
                 "leisure",
-                "holiday"
+                "holiday",
+                "education"
             };
 
             foreach (var preferredId in preferredOrder)
@@ -1769,6 +1998,18 @@ namespace Game.Core.Application.Periods
                         0d,
                         10d,
                         string.Empty);
+                case "education":
+                    return new PeriodExpenseDefinition(
+                        "education",
+                        "Образование",
+                        false,
+                        0d,
+                        0d,
+                        ConsumerCreditMath.EducationTargetAmount,
+                        new[] { FundsSourceType.CurrentIncome, FundsSourceType.Cash, FundsSourceType.Deposit },
+                        0d,
+                        ConsumerCreditMath.EducationTargetAmount,
+                        "Долгосрочная цель на повышение дохода.");
                 case "goods_services":
                 default:
                     return new PeriodExpenseDefinition(
@@ -1940,6 +2181,7 @@ namespace Game.Core.Application.Periods
                 definition.ResidenceOwnership,
                 definition.PensionReserve,
                 definition.PdsAccount,
+                definition.EducationGoal,
                 initialCashBalance ?? definition.InitialCashBalance,
                 initialDepositBalance ?? definition.InitialDepositBalance,
                 definition.SourceSummary);
