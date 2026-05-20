@@ -1464,10 +1464,9 @@ namespace Game.Core.Application.Periods
             }
 
             if (IsFixedAmountExpense(definition)
-                && targetAmount > 0d
-                && Math.Abs(targetAmount - definition.MinimumAmount) > 0.01d)
+                && targetAmount > definition.MinimumAmount + 0.01d)
             {
-                validationMessage = $"Для «{definition.Title}» доступна только фиксированная сумма {EcuFormatter.FormatAmount(definition.MinimumAmount)}.";
+                validationMessage = $"Для «{definition.Title}» доступен максимум {EcuFormatter.FormatAmount(definition.MinimumAmount)}.";
                 return false;
             }
 

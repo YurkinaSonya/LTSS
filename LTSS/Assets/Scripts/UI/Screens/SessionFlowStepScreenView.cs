@@ -45,10 +45,17 @@ public sealed class SessionFlowStepScreenView : ScreenView
     private Text _pageIndicatorLabel;
     private Button _primaryButton;
     private Button _secondaryButton;
+    private Button _instructionReferenceButton;
+    private RectTransform _instructionPopupOverlay;
+    private Text _instructionPopupTitleLabel;
+    private Text _instructionPopupBodyLabel;
+    private ScrollRect _instructionPopupScrollRect;
     private bool _isBuilt;
     private string _lastStepKey = string.Empty;
     private bool _isSurveyFeedbackShown;
     private int _currentPageIndex;
+    private string _instructionReferenceTitle = string.Empty;
+    private string _instructionReferenceBody = string.Empty;
     private readonly List<int> _pageOrder = new List<int>();
     private UIContext _context;
     private readonly Dictionary<string, QuestionBinding> _questionBindings =
@@ -86,6 +93,7 @@ public sealed class SessionFlowStepScreenView : ScreenView
             : "Шаг сценария";
 
         var isSurvey = viewModel.RendererKind == SessionFlowRendererKind.Survey;
+        ResolveInstructionReference(flowState);
 
         _titleLabel.text = title;
         _subtitleLabel.text = viewModel.Subtitle ?? string.Empty;
@@ -127,10 +135,17 @@ public sealed class SessionFlowStepScreenView : ScreenView
 
         var canShowSecondary = viewModel.CanSkip && !string.IsNullOrWhiteSpace(viewModel.SecondaryActionText);
         _secondaryButton.gameObject.SetActive(canShowSecondary);
+        _instructionReferenceButton.gameObject.SetActive(
+            isSurvey && !string.IsNullOrWhiteSpace(_instructionReferenceBody));
 
         if (canShowSecondary)
         {
             RuntimeUiFactory.SetButtonText(_secondaryButton, viewModel.SecondaryActionText);
+        }
+
+        if (!isSurvey || string.IsNullOrWhiteSpace(_instructionReferenceBody))
+        {
+            CloseInstructionReferencePopup();
         }
     }
 
@@ -323,9 +338,21 @@ public sealed class SessionFlowStepScreenView : ScreenView
         _statusLabel.gameObject.SetActive(false);
 
         var buttonRow = RuntimeUiFactory.CreateRow("Buttons", content, 12f, TextAnchor.MiddleCenter);
+        _instructionReferenceButton = RuntimeUiFactory.CreateSecondaryButton(buttonRow, "Открыть инструкцию");
+        var instructionButtonLayout = _instructionReferenceButton.gameObject.GetComponent<LayoutElement>();
+
+        if (instructionButtonLayout != null)
+        {
+            instructionButtonLayout.flexibleWidth = 0f;
+            instructionButtonLayout.preferredWidth = 240f;
+        }
+
+        _instructionReferenceButton.onClick.AddListener(OpenInstructionReferencePopup);
+        _instructionReferenceButton.gameObject.SetActive(false);
         _secondaryButton = RuntimeUiFactory.CreateSecondaryButton(buttonRow, "Пропустить");
         _primaryButton = RuntimeUiFactory.CreatePrimaryButton(buttonRow, "Далее");
         _secondaryButton.gameObject.SetActive(false);
+        BuildInstructionReferencePopup(background);
     }
 
     private void RebuildQuestions(SessionFlowRuntimeState flowState, IReadOnlyList<SessionFlowQuestionRuntime> questions)
@@ -1492,6 +1519,216 @@ public sealed class SessionFlowStepScreenView : ScreenView
         }
     }
 
+    private void BuildInstructionReferencePopup(Transform parent)
+    {
+        _instructionPopupOverlay = CreateRect("InstructionReferenceOverlay", parent);
+        Stretch(_instructionPopupOverlay, 0f, 0f, 0f, 0f);
+        _instructionPopupOverlay.SetAsLastSibling();
+
+        var overlayImage = _instructionPopupOverlay.gameObject.AddComponent<Image>();
+        overlayImage.color = new Color(0.12f, 0.15f, 0.22f, 0.6f);
+
+        var overlayButton = _instructionPopupOverlay.gameObject.AddComponent<Button>();
+        overlayButton.transition = Selectable.Transition.None;
+        overlayButton.onClick.AddListener(CloseInstructionReferencePopup);
+
+        var card = RuntimeUiFactory.CreateCard("InstructionReferenceCard", _instructionPopupOverlay, new Vector2(760f, 620f));
+        var content = RuntimeUiFactory.CreateContentRoot(
+            "InstructionReferenceContent",
+            card,
+            new RectOffset(28, 28, 28, 24),
+            12f);
+
+        var headerRow = RuntimeUiFactory.CreateRow("InstructionReferenceHeader", content, 12f, TextAnchor.MiddleCenter);
+        var headerLayout = headerRow.GetComponent<HorizontalLayoutGroup>();
+        headerLayout.childForceExpandWidth = false;
+        headerLayout.childControlWidth = true;
+
+        _instructionPopupTitleLabel = RuntimeUiFactory.CreateTitle(headerRow, "Инструкция", TextAnchor.MiddleLeft);
+        var titleLayout = _instructionPopupTitleLabel.gameObject.AddComponent<LayoutElement>();
+        titleLayout.flexibleWidth = 1f;
+
+        var closeButton = RuntimeUiFactory.CreateSecondaryButton(headerRow, "Закрыть", 42f);
+        var closeLayout = closeButton.gameObject.GetComponent<LayoutElement>();
+
+        if (closeLayout != null)
+        {
+            closeLayout.flexibleWidth = 0f;
+            closeLayout.preferredWidth = 140f;
+        }
+
+        closeButton.onClick.AddListener(CloseInstructionReferencePopup);
+
+        var bodyPanel = RuntimeUiFactory.CreatePanel(
+            "InstructionReferenceBodyPanel",
+            content,
+            new RectOffset(18, 18, 18, 18),
+            10f,
+            RuntimeUiFactory.SurfaceColor);
+        DisableContentSizeFitter(bodyPanel);
+        var panelLayout = bodyPanel.gameObject.AddComponent<LayoutElement>();
+        panelLayout.flexibleHeight = 1f;
+        panelLayout.minHeight = 420f;
+
+        var scrollArea = RuntimeUiFactory.CreateRow("InstructionReferenceScrollArea", bodyPanel, 8f, TextAnchor.UpperLeft);
+        var scrollAreaLayout = scrollArea.GetComponent<HorizontalLayoutGroup>();
+        scrollAreaLayout.childForceExpandWidth = false;
+        scrollAreaLayout.childForceExpandHeight = true;
+        scrollAreaLayout.childControlHeight = true;
+        var scrollAreaElement = scrollArea.gameObject.AddComponent<LayoutElement>();
+        scrollAreaElement.flexibleHeight = 1f;
+        scrollAreaElement.minHeight = 380f;
+
+        var viewport = CreateRect("InstructionReferenceViewport", scrollArea);
+        var viewportLayout = viewport.gameObject.AddComponent<LayoutElement>();
+        viewportLayout.flexibleWidth = 1f;
+        viewportLayout.flexibleHeight = 1f;
+        viewportLayout.minHeight = 380f;
+        var viewportImage = viewport.gameObject.AddComponent<Image>();
+        viewportImage.color = Color.white;
+        var viewportMask = viewport.gameObject.AddComponent<Mask>();
+        viewportMask.showMaskGraphic = false;
+
+        _instructionPopupScrollRect = bodyPanel.gameObject.AddComponent<ScrollRect>();
+        _instructionPopupScrollRect.viewport = viewport;
+        _instructionPopupScrollRect.horizontal = false;
+        _instructionPopupScrollRect.vertical = true;
+        _instructionPopupScrollRect.movementType = ScrollRect.MovementType.Clamped;
+        _instructionPopupScrollRect.scrollSensitivity = 24f;
+        var scrollbar = CreateVerticalScrollbar(scrollArea);
+        _instructionPopupScrollRect.verticalScrollbar = scrollbar;
+        _instructionPopupScrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
+
+        var bodyContent = RuntimeUiFactory.CreateContentRoot(
+            "InstructionReferenceBodyContent",
+            viewport,
+            new RectOffset(0, 0, 0, 0),
+            8f);
+        bodyContent.anchorMin = new Vector2(0f, 1f);
+        bodyContent.anchorMax = new Vector2(1f, 1f);
+        bodyContent.pivot = new Vector2(0.5f, 1f);
+        bodyContent.anchoredPosition = Vector2.zero;
+        bodyContent.sizeDelta = new Vector2(0f, 0f);
+        var contentFitter = bodyContent.gameObject.AddComponent<ContentSizeFitter>();
+        contentFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+        contentFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+        _instructionPopupScrollRect.content = bodyContent;
+
+        _instructionPopupBodyLabel = RuntimeUiFactory.CreateBodyText(bodyContent, string.Empty);
+        _instructionPopupBodyLabel.alignment = TextAnchor.UpperLeft;
+        _instructionPopupBodyLabel.supportRichText = true;
+        _instructionPopupBodyLabel.horizontalOverflow = HorizontalWrapMode.Wrap;
+        _instructionPopupBodyLabel.verticalOverflow = VerticalWrapMode.Overflow;
+
+        _instructionPopupOverlay.gameObject.SetActive(false);
+    }
+
+    private void ResolveInstructionReference(SessionFlowRuntimeState flowState)
+    {
+        _instructionReferenceTitle = string.Empty;
+        _instructionReferenceBody = string.Empty;
+
+        if (flowState == null || flowState.Config == null || flowState.ActiveStepView == null)
+        {
+            return;
+        }
+
+        var descriptor = flowState.ActiveStepView.Descriptor;
+
+        if (descriptor == null
+            || descriptor.Scope != SessionFlowStepScope.PreSession
+            || flowState.ActiveStepView.RendererKind != SessionFlowRendererKind.Survey)
+        {
+            return;
+        }
+
+        var flow = flowState.Config.PreSessionFlow;
+
+        if (flow == null || flow.Steps == null)
+        {
+            return;
+        }
+
+        for (var index = 0; index < flow.Steps.Count; index++)
+        {
+            var step = flow.Steps[index];
+
+            if (step == null || !string.Equals(step.Id, descriptor.Key, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            for (var previousIndex = index - 1; previousIndex >= 0; previousIndex--)
+            {
+                var previousStep = flow.Steps[previousIndex];
+
+                if (!IsInstructionReferenceCandidate(previousStep))
+                {
+                    continue;
+                }
+
+                _instructionReferenceTitle = string.IsNullOrWhiteSpace(previousStep.Title)
+                    ? "Инструкция"
+                    : previousStep.Title;
+                _instructionReferenceBody = previousStep.Body ?? string.Empty;
+                return;
+            }
+
+            return;
+        }
+    }
+
+    private void OpenInstructionReferencePopup()
+    {
+        if (_instructionPopupOverlay == null || string.IsNullOrWhiteSpace(_instructionReferenceBody))
+        {
+            return;
+        }
+
+        _instructionPopupTitleLabel.text = string.IsNullOrWhiteSpace(_instructionReferenceTitle)
+            ? "Инструкция"
+            : _instructionReferenceTitle;
+        _instructionPopupBodyLabel.text = FormatSimpleMarkdown(_instructionReferenceBody);
+        _instructionPopupOverlay.gameObject.SetActive(true);
+        _instructionPopupOverlay.SetAsLastSibling();
+
+        if (_instructionPopupScrollRect != null)
+        {
+            Canvas.ForceUpdateCanvases();
+            _instructionPopupScrollRect.verticalNormalizedPosition = 1f;
+        }
+    }
+
+    private void CloseInstructionReferencePopup()
+    {
+        if (_instructionPopupOverlay != null)
+        {
+            _instructionPopupOverlay.gameObject.SetActive(false);
+        }
+    }
+
+    private static bool IsInstructionReferenceCandidate(FlowStepRuntime step)
+    {
+        return step != null
+               && !string.IsNullOrWhiteSpace(step.Id)
+               && !string.IsNullOrWhiteSpace(step.Body)
+               && !IsSurveyStepType(step.Type);
+    }
+
+    private static bool IsSurveyStepType(SessionFlowStepType type)
+    {
+        switch (type)
+        {
+            case SessionFlowStepType.InstructionQuiz:
+            case SessionFlowStepType.PreTest:
+            case SessionFlowStepType.PostTest:
+            case SessionFlowStepType.PostPeriodSurvey:
+                return true;
+            default:
+                return false;
+        }
+    }
+
     private static string FormatSimpleMarkdown(string rawText)
     {
         if (string.IsNullOrWhiteSpace(rawText))
@@ -1662,5 +1899,18 @@ public sealed class SessionFlowStepScreenView : ScreenView
         var gameObject = new GameObject(name, typeof(RectTransform));
         gameObject.transform.SetParent(parent, false);
         return gameObject.GetComponent<RectTransform>();
+    }
+
+    private static void Stretch(RectTransform rect, float left, float right, float top, float bottom)
+    {
+        if (rect == null)
+        {
+            return;
+        }
+
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.offsetMin = new Vector2(left, bottom);
+        rect.offsetMax = new Vector2(-right, -top);
     }
 }
