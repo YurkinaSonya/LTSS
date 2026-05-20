@@ -9,6 +9,7 @@ namespace Game.Core.Application.Session
         event Action<SessionFlowRuntimeState> Changed;
 
         void StartOrResume();
+        void SkipPreSessionFlowForTesting();
         void CompleteActiveStep();
         void ApplyPermanentIncomeLoss();
         void SkipActiveStep();

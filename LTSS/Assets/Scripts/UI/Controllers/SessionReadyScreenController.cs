@@ -1,6 +1,7 @@
-using Game.Core.Application.UI;
+using System;
 using Game.Core.Application.Session;
 using Game.Core.Application.State;
+using Game.Core.Application.UI;
 
 public sealed class SessionReadyScreenController : ScreenController
 {
@@ -18,6 +19,7 @@ public sealed class SessionReadyScreenController : ScreenController
 
         _view.BindContinue(OnContinue);
         _view.BindLogout(OnLogout);
+        _view.BindTesterSkip(OnTesterSkip);
         Refresh();
 
         if (Context.SessionCoordinator != null)
@@ -45,6 +47,7 @@ public sealed class SessionReadyScreenController : ScreenController
 
         _view.BindContinue(null);
         _view.BindLogout(null);
+        _view.BindTesterSkip(null);
     }
 
     private void OnContinue()
@@ -62,6 +65,21 @@ public sealed class SessionReadyScreenController : ScreenController
     private void OnLogout()
     {
         Context.SessionCoordinator?.ClearSession("session_ready_logout");
+    }
+
+    private void OnTesterSkip()
+    {
+        var runtimeState = Context.SessionCoordinator != null
+            ? Context.SessionCoordinator.CurrentRuntime
+            : ClientRuntimeState.Empty;
+
+        if (!CanContinue(runtimeState) || !CanShowTesterSkip(runtimeState))
+        {
+            return;
+        }
+
+        Context.SessionFlow?.SkipPreSessionFlowForTesting();
+        Context.Navigation?.StartGameplay("session_ready_tester_skip_pre_session");
     }
 
     private void OnRuntimeChanged(ClientRuntimeState runtimeState)
@@ -89,7 +107,8 @@ public sealed class SessionReadyScreenController : ScreenController
             runtimeState,
             statusMessage,
             canContinue,
-            canContinue ? "Дальше" : "Завершено");
+            canContinue ? "Дальше" : "Завершено",
+            CanShowTesterSkip(runtimeState));
     }
 
     private static bool CanContinue(ClientRuntimeState runtimeState)
@@ -118,5 +137,33 @@ public sealed class SessionReadyScreenController : ScreenController
         return runtimeState.Bootstrap.Run.RunStatus == RunLifecycleStatus.Completed
             ? "Все периоды завершены. Далее будет пост-экспериментальный этап."
             : string.Empty;
+    }
+
+    private static bool CanShowTesterSkip(ClientRuntimeState runtimeState)
+    {
+        if (runtimeState == null
+            || !runtimeState.HasSession
+            || runtimeState.Bootstrap == null
+            || runtimeState.Bootstrap.Participant == null
+            || runtimeState.Bootstrap.Session == null
+            || runtimeState.Bootstrap.Session.SessionConfig == null)
+        {
+            return false;
+        }
+
+        if (!string.Equals(
+                runtimeState.Bootstrap.Participant.AssignedGroupCode,
+                "test",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var config = runtimeState.Bootstrap.Session.SessionConfig.Runtime;
+        return config != null
+               && config.IsValid
+               && config.PreSessionFlow != null
+               && config.PreSessionFlow.IsEnabled
+               && config.PreSessionFlow.HasSteps;
     }
 }

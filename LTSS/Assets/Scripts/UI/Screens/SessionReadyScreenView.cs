@@ -1,9 +1,9 @@
 using System;
 using System.Text;
-using UnityEngine;
-using UnityEngine.UI;
 using Game.Core.Application.Session;
 using Game.Core.Application.UI;
+using UnityEngine;
+using UnityEngine.UI;
 
 public sealed class SessionReadyScreenView : ScreenView
 {
@@ -14,6 +14,7 @@ public sealed class SessionReadyScreenView : ScreenView
     private Text _surveyLabel;
     private Text _configLabel;
     private Text _statusLabel;
+    private Button _testerSkipButton;
     private Button _continueButton;
     private Button _logoutButton;
     private bool _isBuilt;
@@ -36,11 +37,18 @@ public sealed class SessionReadyScreenView : ScreenView
         BindButton(_logoutButton, callback);
     }
 
+    public void BindTesterSkip(Action callback)
+    {
+        EnsureBuilt();
+        BindButton(_testerSkipButton, callback);
+    }
+
     public void ApplyRuntime(
         ClientRuntimeState runtimeState,
         string statusMessage,
         bool canContinue,
-        string continueButtonText)
+        string continueButtonText,
+        bool showTesterSkipButton)
     {
         EnsureBuilt();
 
@@ -56,6 +64,7 @@ public sealed class SessionReadyScreenView : ScreenView
             _statusLabel.gameObject.SetActive(!string.IsNullOrWhiteSpace(statusMessage));
             _continueButton.interactable = false;
             RuntimeUiFactory.SetButtonText(_continueButton, continueButtonText);
+            _testerSkipButton.gameObject.SetActive(false);
             return;
         }
 
@@ -98,6 +107,7 @@ public sealed class SessionReadyScreenView : ScreenView
         _statusLabel.gameObject.SetActive(!string.IsNullOrWhiteSpace(statusMessage));
         _continueButton.interactable = canContinue;
         RuntimeUiFactory.SetButtonText(_continueButton, continueButtonText);
+        _testerSkipButton.gameObject.SetActive(showTesterSkipButton);
     }
 
     private void EnsureBuilt()
@@ -117,7 +127,23 @@ public sealed class SessionReadyScreenView : ScreenView
             new RectOffset(34, 34, 34, 30),
             12f);
 
-        _sessionTitleLabel = RuntimeUiFactory.CreateTitle(content, "Сессия", TextAnchor.MiddleLeft);
+        var headerRow = RuntimeUiFactory.CreateRow("Header", content, 12f, TextAnchor.MiddleCenter);
+        var headerElement = headerRow.gameObject.AddComponent<LayoutElement>();
+        headerElement.preferredHeight = 54f;
+        headerElement.flexibleWidth = 1f;
+
+        _sessionTitleLabel = RuntimeUiFactory.CreateTitle(headerRow, "Сессия", TextAnchor.MiddleLeft);
+        _testerSkipButton = RuntimeUiFactory.CreateSecondaryButton(headerRow, "Тестировщик", 44f);
+        var testerElement = _testerSkipButton.gameObject.GetComponent<LayoutElement>();
+
+        if (testerElement != null)
+        {
+            testerElement.preferredWidth = 170f;
+            testerElement.flexibleWidth = 0f;
+        }
+
+        _testerSkipButton.gameObject.SetActive(false);
+
         _sessionCodeLabel = RuntimeUiFactory.CreateCaption(content, string.Empty);
         RuntimeUiFactory.AddSpacer(content, 8f);
 

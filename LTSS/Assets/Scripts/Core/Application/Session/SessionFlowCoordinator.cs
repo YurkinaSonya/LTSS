@@ -104,6 +104,58 @@ namespace Game.Core.Application.Session
             ResolveAndPublish(clientRuntime, config, progress, string.Empty, string.Empty);
         }
 
+        public void SkipPreSessionFlowForTesting()
+        {
+            var clientRuntime = _sessionCoordinator != null
+                ? _sessionCoordinator.CurrentRuntime
+                : ClientRuntimeState.Empty;
+
+            if (clientRuntime == null || !clientRuntime.HasSession)
+            {
+                return;
+            }
+
+            var config = clientRuntime.Bootstrap != null
+                         && clientRuntime.Bootstrap.Session != null
+                         && clientRuntime.Bootstrap.Session.SessionConfig != null
+                ? clientRuntime.Bootstrap.Session.SessionConfig.Runtime
+                : SessionConfigRuntime.Empty;
+
+            if (config == null
+                || !config.IsValid
+                || config.PreSessionFlow == null
+                || !config.PreSessionFlow.IsEnabled
+                || !config.PreSessionFlow.HasSteps)
+            {
+                return;
+            }
+
+            var nextProgress = LoadOrCreateProgress(clientRuntime, config);
+
+            for (var index = 0; index < config.PreSessionFlow.Steps.Count; index++)
+            {
+                var step = config.PreSessionFlow.Steps[index];
+
+                if (step == null || string.IsNullOrWhiteSpace(step.Id))
+                {
+                    continue;
+                }
+
+                nextProgress = nextProgress.WithCompleted(SessionFlowStepScope.PreSession, step.Id);
+            }
+
+            nextProgress = nextProgress.WithActiveStep(SessionFlowStepDescriptor.Empty, 0);
+            PersistProgress(clientRuntime, config, nextProgress);
+
+            Publish(new SessionFlowRuntimeState(
+                config,
+                nextProgress,
+                SessionFlowStepViewModel.Empty,
+                "Пре-сессионные шаги пропущены.",
+                string.Empty,
+                false));
+        }
+
         public void CompleteActiveStep()
         {
             var descriptor = _current != null && _current.Progress != null
