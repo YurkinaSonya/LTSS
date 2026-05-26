@@ -147,6 +147,8 @@ public sealed class SessionFlowStepScreenView : ScreenView
         {
             CloseInstructionReferencePopup();
         }
+
+        UpdatePrimaryButtonInteractable(viewModel);
     }
 
     public IReadOnlyDictionary<string, string> CollectAnswers()
@@ -467,6 +469,7 @@ public sealed class SessionFlowStepScreenView : ScreenView
             string.IsNullOrWhiteSpace(question.Placeholder)
                 ? "Введите ответ"
                 : question.Placeholder);
+        binding.TextInput.onValueChanged.AddListener(_ => OnSurveyAnswerChanged());
     }
 
     private void BuildChoiceOptions(
@@ -527,6 +530,12 @@ public sealed class SessionFlowStepScreenView : ScreenView
 
             binding.Options.Add(optionBinding);
             optionBinding.Toggle.onValueChanged.AddListener(_ => RefreshOtherInputs(binding));
+            optionBinding.Toggle.onValueChanged.AddListener(_ => OnSurveyAnswerChanged());
+
+            if (optionBinding.OtherInput != null)
+            {
+                optionBinding.OtherInput.onValueChanged.AddListener(_ => OnSurveyAnswerChanged());
+            }
         }
 
         if (toggleGroup != null)
@@ -593,6 +602,12 @@ public sealed class SessionFlowStepScreenView : ScreenView
 
             binding.Options.Add(optionBinding);
             optionBinding.Toggle.onValueChanged.AddListener(_ => RefreshOtherInputs(binding));
+            optionBinding.Toggle.onValueChanged.AddListener(_ => OnSurveyAnswerChanged());
+
+            if (optionBinding.OtherInput != null)
+            {
+                optionBinding.OtherInput.onValueChanged.AddListener(_ => OnSurveyAnswerChanged());
+            }
         }
 
         if (toggleGroup != null)
@@ -1175,6 +1190,40 @@ public sealed class SessionFlowStepScreenView : ScreenView
         }
 
         return false;
+    }
+
+    private void OnSurveyAnswerChanged()
+    {
+        var flowState = _context != null && _context.SessionFlow != null
+            ? _context.SessionFlow.Current
+            : SessionFlowRuntimeState.Empty;
+        var viewModel = flowState != null
+            ? flowState.ActiveStepView
+            : SessionFlowStepViewModel.Empty;
+
+        UpdatePrimaryButtonInteractable(viewModel);
+    }
+
+    private void UpdatePrimaryButtonInteractable(SessionFlowStepViewModel viewModel)
+    {
+        if (_primaryButton == null)
+        {
+            return;
+        }
+
+        if (viewModel == null || viewModel.RendererKind != SessionFlowRendererKind.Survey)
+        {
+            _primaryButton.interactable = true;
+            return;
+        }
+
+        if (_isSurveyFeedbackShown)
+        {
+            _primaryButton.interactable = true;
+            return;
+        }
+
+        _primaryButton.interactable = !HasMissingRequiredAnswers(CollectAnswers());
     }
 
     private void EvaluateCheckableQuestions()
