@@ -429,10 +429,7 @@ public sealed class SessionFlowStepScreenView : ScreenView
 
     private static void BuildQuestionHeader(Transform parent, SessionFlowQuestionRuntime question)
     {
-        var title = question.IsRequired
-            ? $"{question.Label} *"
-            : question.Label;
-        var titleLabel = RuntimeUiFactory.CreateBodyText(parent, title);
+        var titleLabel = RuntimeUiFactory.CreateBodyText(parent, question.Label);
         RuntimeUiFactory.ApplyTextStyle(titleLabel, FontStyle.Bold);
 
         if (!string.IsNullOrWhiteSpace(question.Description))

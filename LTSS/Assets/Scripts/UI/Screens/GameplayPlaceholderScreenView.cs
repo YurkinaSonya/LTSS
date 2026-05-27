@@ -268,10 +268,8 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
             ? meta.Title
             : $"Период {meta.PeriodNumber}";
 
-        _periodSubtitleLabel.text = !string.IsNullOrWhiteSpace(meta.Phase)
-            ? meta.Phase
-            : string.Empty;
-        _periodSubtitleLabel.gameObject.SetActive(!string.IsNullOrWhiteSpace(_periodSubtitleLabel.text));
+        _periodSubtitleLabel.text = string.Empty;
+        _periodSubtitleLabel.gameObject.SetActive(false);
         _phaseLabel.text = !string.IsNullOrWhiteSpace(meta.Phase)
             ? $"{meta.Phase} / {FormatFlow(runtimeState.FlowState)}"
             : FormatFlow(runtimeState.FlowState);
@@ -1035,9 +1033,34 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
             return "-";
         }
 
-        return string.Equals(infoValue.Id, "income_growth", StringComparison.Ordinal)
-            ? EcuFormatter.FormatGrowthPercent(infoValue.NumericValue, infoValue.RawText)
-            : infoValue.DisplayValue;
+        if (string.Equals(infoValue.Id, "income_growth", StringComparison.Ordinal))
+        {
+            return FormatRoundedGrowthPercent(infoValue.NumericValue, infoValue.RawText);
+        }
+
+        if (infoValue.NumericValue.HasValue)
+        {
+            var formatted = infoValue.NumericValue.Value.ToString("0.##", CultureInfo.InvariantCulture);
+            return string.IsNullOrWhiteSpace(infoValue.Suffix)
+                ? formatted
+                : $"{formatted}{infoValue.Suffix}";
+        }
+
+        return infoValue.DisplayValue;
+    }
+
+    private static string FormatRoundedGrowthPercent(double? multiplier, string fallback = "-")
+    {
+        if (!multiplier.HasValue)
+        {
+            return fallback;
+        }
+
+        var percent = (multiplier.Value - 1d) * 100d;
+        var prefix = percent > 0d
+            ? "+"
+            : string.Empty;
+        return $"{prefix}{percent.ToString("0.##", CultureInfo.InvariantCulture)}%";
     }
 
     private static bool IsCompletedEducationExpense(
