@@ -20,6 +20,7 @@ public class Enums
         Mortgage,
         ApartmentPurchase,
         ApartmentSale,
-        Pds
+        Pds,
+        PdsCalculator
     }
 }

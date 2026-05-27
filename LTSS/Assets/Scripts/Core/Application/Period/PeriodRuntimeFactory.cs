@@ -248,9 +248,13 @@ namespace Game.Core.Application.Periods
                 configuredPeriod,
                 economyContext,
                 isFirstMainPeriod);
-            var pdsAccount = isFirstMainPeriod
-                ? null
-                : ResolvePdsAccount(runId, periodNumber);
+            var requiresManualPdsEnrollment = RequiresManualPdsEnrollment(clientRuntime);
+            var pdsAccount = ResolvePdsAccount(
+                runId,
+                periodNumber,
+                configuredPeriod,
+                economyContext,
+                !requiresManualPdsEnrollment);
             var baseExpenseDefinitions = BuildExpenseDefinitions(
                 periodNode,
                 sessionRoot,
@@ -557,8 +561,20 @@ namespace Game.Core.Application.Periods
                     : null;
         }
 
-        private PdsAccountRuntime ResolvePdsAccount(string runId, int periodNumber)
+        private PdsAccountRuntime ResolvePdsAccount(
+            string runId,
+            int periodNumber,
+            SessionPeriodRuntime configuredPeriod,
+            PeriodEconomyContext economyContext,
+            bool shouldAutoEnroll)
         {
+            var pdsFeatureActive = configuredPeriod != null && configuredPeriod.HasFeature("pds");
+
+            if (!pdsFeatureActive)
+            {
+                return null;
+            }
+
             if (_persistenceService == null
                 || _serializer == null
                 || string.IsNullOrWhiteSpace(runId)
@@ -568,7 +584,9 @@ namespace Game.Core.Application.Periods
                 || !string.Equals(snapshot.runId, runId, StringComparison.Ordinal)
                 || string.IsNullOrWhiteSpace(snapshot.rawPeriodStateJson))
             {
-                return null;
+                return shouldAutoEnroll
+                    ? CreatePdsAccount(periodNumber)
+                    : null;
             }
 
             if (!_serializer.TryDeserialize(
@@ -584,12 +602,16 @@ namespace Game.Core.Application.Periods
 
             if (snapshot.periodNumber == periodNumber)
             {
-                return restoredAccount;
+                return restoredAccount ?? (shouldAutoEnroll
+                    ? CreatePdsAccount(periodNumber)
+                    : null);
             }
 
             return snapshot.isCheckpointSubmitted && snapshot.periodNumber == periodNumber - 1
-                ? restoredAccount
-                : null;
+                ? AdvancePdsAccount(restoredAccount, economyContext, periodNumber, shouldAutoEnroll)
+                : shouldAutoEnroll
+                    ? CreatePdsAccount(periodNumber)
+                    : null;
         }
 
         private EducationGoalRuntime ResolveEducationGoal(
@@ -725,7 +747,51 @@ namespace Game.Core.Application.Periods
             return new PdsAccountRuntime(
                 snapshot.accountId,
                 Math.Max(0d, snapshot.balance),
-                Math.Max(0, snapshot.activationPeriodNumber));
+                Math.Max(0, snapshot.activationPeriodNumber),
+                Math.Max(0, snapshot.lastContributionPeriodNumber),
+                Math.Max(0d, snapshot.lastContributionAmount));
+        }
+
+        private static PdsAccountRuntime AdvancePdsAccount(
+            PdsAccountRuntime currentAccount,
+            PeriodEconomyContext economyContext,
+            int periodNumber,
+            bool shouldAutoEnroll)
+        {
+            if (currentAccount == null)
+            {
+                return shouldAutoEnroll
+                    ? CreatePdsAccount(periodNumber)
+                    : null;
+            }
+
+            var balance = Math.Max(0d, currentAccount.Balance);
+            var growthRate = ConsumerCreditMath.NormalizePercentageToRate(
+                economyContext != null ? economyContext.DepositRate : null);
+
+            if (growthRate > 0d)
+            {
+                balance *= 1d + growthRate;
+            }
+
+            return new PdsAccountRuntime(
+                currentAccount.AccountId,
+                balance,
+                currentAccount.ActivationPeriodNumber > 0
+                    ? currentAccount.ActivationPeriodNumber
+                    : periodNumber,
+                currentAccount.LastContributionPeriodNumber,
+                currentAccount.LastContributionAmount);
+        }
+
+        private static PdsAccountRuntime CreatePdsAccount(int periodNumber)
+        {
+            return new PdsAccountRuntime(
+                Guid.NewGuid().ToString("N"),
+                0d,
+                Math.Max(0, periodNumber),
+                0,
+                0d);
         }
 
         private static EducationGoalRuntime RestoreEducationGoal(
@@ -754,6 +820,25 @@ namespace Game.Core.Application.Periods
                 targetAmount,
                 Math.Max(0, snapshot.goalReachedPeriodNumber),
                 Math.Max(0, snapshot.incomeBoostStartPeriodNumber));
+        }
+
+        private static bool RequiresManualPdsEnrollment(ClientRuntimeState clientRuntime)
+        {
+            if (clientRuntime == null)
+            {
+                return false;
+            }
+
+            var assignedGroupCode = !string.IsNullOrWhiteSpace(clientRuntime.AuthenticatedRun.AssignedGroupCode)
+                ? clientRuntime.AuthenticatedRun.AssignedGroupCode
+                : clientRuntime.Bootstrap != null && clientRuntime.Bootstrap.Participant != null
+                    ? clientRuntime.Bootstrap.Participant.AssignedGroupCode
+                    : string.Empty;
+
+            return string.Equals(
+                assignedGroupCode,
+                ConsumerCreditMath.ManualPdsEnrollmentGroupCode,
+                StringComparison.OrdinalIgnoreCase);
         }
 
         private static PensionReserveRuntime AdvancePensionReserve(

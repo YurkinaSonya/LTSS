@@ -26,7 +26,8 @@ namespace Game.Core.Application.Periods
         bool TryBuyApartment(out string errorMessage);
         bool TrySellApartment(out string errorMessage);
         bool TrySubmitMortgage(out string errorMessage);
-        bool TrySubmitPds(string rawAmount, out string errorMessage);
+        bool TryActivatePds(string rawContributionAmount, string rawPensionTransferAmount, out string errorMessage);
+        bool TrySubmitPds(string rawContributionAmount, string rawPensionTransferAmount, out string errorMessage);
         void CloseAssetDialog();
         void ApplyPermanentIncomeLoss();
         void SubmitPeriod();

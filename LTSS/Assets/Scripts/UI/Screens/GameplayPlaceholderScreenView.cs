@@ -449,9 +449,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         var canUsePds = runtimeState != null
                         && runtimeState.HasDefinition
                         && runtimeState.Definition.Meta != null
-                        && runtimeState.Definition.Meta.HasFeature("pds")
-                        && runtimeState.Definition.PensionReserve != null
-                        && runtimeState.Definition.PensionReserve.HasEverBeenActive;
+                        && runtimeState.Definition.Meta.HasFeature("pds");
         var canTakeMortgage = showMortgage && !ownsApartment && !HasActiveMortgage(runtimeState);
 
         if (_actionButtonsColumn != null)
@@ -482,6 +480,13 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         _apartmentButton.interactable = canEdit && showMortgage && !ownsApartment;
         _mortgageButton.interactable = canEdit && canTakeMortgage;
         _pdsButton.interactable = canEdit && canUsePds;
+        RuntimeUiFactory.SetButtonText(
+            _pdsButton,
+            runtimeState != null
+            && runtimeState.HasDefinition
+            && runtimeState.Definition.PdsAccount == null
+                ? "Вступить в ПДС"
+                : "ПДС");
     }
 
     private void ApplyAssets(

@@ -117,15 +117,21 @@ namespace Game.Domain.GameFlow
         public string AccountId { get; }
         public double Balance { get; }
         public int ActivationPeriodNumber { get; }
+        public int LastContributionPeriodNumber { get; }
+        public double LastContributionAmount { get; }
 
         public PdsAccountRuntime(
             string accountId,
             double balance,
-            int activationPeriodNumber)
+            int activationPeriodNumber,
+            int lastContributionPeriodNumber,
+            double lastContributionAmount)
         {
             AccountId = accountId ?? string.Empty;
             Balance = balance;
             ActivationPeriodNumber = activationPeriodNumber;
+            LastContributionPeriodNumber = lastContributionPeriodNumber;
+            LastContributionAmount = lastContributionAmount;
         }
     }
 

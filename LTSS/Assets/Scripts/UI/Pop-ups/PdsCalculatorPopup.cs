@@ -1,17 +1,20 @@
 using System;
+using System.Globalization;
 using Game.Core.Application.Periods;
 using Game.Domain.GameFlow;
 using UnityEngine;
 using UnityEngine.UI;
 
-[PopupDefinition(Enums.PopupType.Pds)]
-public sealed class PdsPopup : Popup
+[PopupDefinition(Enums.PopupType.PdsCalculator)]
+public sealed class PdsCalculatorPopup : Popup
 {
     private Text _titleLabel;
     private Text _subtitleLabel;
     private Text _availableIncomeLabel;
     private Text _availablePensionLabel;
-    private Text _currentPdsLabel;
+    private Text _rateLabel;
+    private Text _bonusLabel;
+    private Text _projectionLabel;
     private Text _messageLabel;
     private InputField _contributionInput;
     private InputField _pensionTransferInput;
@@ -19,7 +22,7 @@ public sealed class PdsPopup : Popup
     private Button _cancelButton;
     private bool _isBuilt;
 
-    public override Enums.PopupType PopupType => Enums.PopupType.Pds;
+    public override Enums.PopupType PopupType => Enums.PopupType.PdsCalculator;
 
     protected override void OnInitialize()
     {
@@ -35,6 +38,16 @@ public sealed class PdsPopup : Popup
         {
             SetMessage("Сервис периода недоступен.");
         }
+
+        if (_contributionInput != null)
+        {
+            _contributionInput.onValueChanged.AddListener(_ => RefreshProjection());
+        }
+
+        if (_pensionTransferInput != null)
+        {
+            _pensionTransferInput.onValueChanged.AddListener(_ => RefreshProjection());
+        }
     }
 
     public override void Close(Action callback = null)
@@ -44,12 +57,22 @@ public sealed class PdsPopup : Popup
             Context.PeriodGameplay.Changed -= ApplyRuntime;
         }
 
+        if (_contributionInput != null)
+        {
+            _contributionInput.onValueChanged.RemoveAllListeners();
+        }
+
+        if (_pensionTransferInput != null)
+        {
+            _pensionTransferInput.onValueChanged.RemoveAllListeners();
+        }
+
         base.Close(callback);
     }
 
     private void BindButtons()
     {
-        BindButton(_cancelButton, () => Context.Popups?.Pop("pds_cancel"));
+        BindButton(_cancelButton, () => Context.Popups?.Pop("pds_calc_cancel"));
         BindButton(_confirmButton, HandleConfirm);
     }
 
@@ -61,12 +84,12 @@ public sealed class PdsPopup : Popup
             return;
         }
 
-        if (Context.PeriodGameplay.TrySubmitPds(
+        if (Context.PeriodGameplay.TryActivatePds(
                 ReadContributionText(),
                 ReadPensionTransferText(),
                 out var errorMessage))
         {
-            Context.Popups?.Pop("pds_confirm");
+            Context.Popups?.Pop("pds_calc_confirm");
             return;
         }
 
@@ -86,38 +109,69 @@ public sealed class PdsPopup : Popup
 
         var definition = latestRuntime.Definition;
         var pensionReserve = definition.PensionReserve;
-        var pdsAccount = definition.PdsAccount;
         var availableContribution = Math.Max(0d, latestRuntime.Summary.RemainingToAllocate);
         var availablePensionTransfer = pensionReserve != null
             ? Math.Max(0d, pensionReserve.Balance)
             : 0d;
-        var currentPdsAmount = pdsAccount != null
-            ? Math.Max(0d, pdsAccount.Balance)
+        var depositRate = definition.EconomyContext != null && definition.EconomyContext.DepositRate.HasValue
+            ? definition.EconomyContext.DepositRate.Value
             : 0d;
 
-        _titleLabel.text = "ПДС";
-        _subtitleLabel.text = "Пополните ПДС из текущего дохода и при желании переведите пенсионные накопления.";
+        _titleLabel.text = "Калькулятор ПДС";
+        _subtitleLabel.text = "Оцените результат на горизонте 15 периодов и при желании сразу подключите программу.";
         _availableIncomeLabel.text = $"Свободно для взноса: {EcuFormatter.FormatAmount(availableContribution)}";
         _availablePensionLabel.text = $"Пенсионные накопления: {EcuFormatter.FormatAmount(availablePensionTransfer)}";
-        _currentPdsLabel.text = $"Текущий баланс ПДС: {EcuFormatter.FormatAmount(currentPdsAmount)}";
-        RuntimeUiFactory.SetButtonText(_confirmButton, "Сохранить");
-        _confirmButton.interactable = pdsAccount != null
-                                      && (availableContribution > 0.01d || availablePensionTransfer > 0.01d);
+        _rateLabel.text = $"Доходность периода: {depositRate.ToString("0.##", CultureInfo.InvariantCulture)}%";
+        _confirmButton.interactable = true;
 
-        if (pdsAccount == null)
+        if (string.IsNullOrWhiteSpace(_messageLabel.text)
+            && !string.IsNullOrWhiteSpace(latestRuntime.StatusMessage))
         {
-            SetMessage("Сначала подключите ПДС.");
+            SetMessage(latestRuntime.StatusMessage);
         }
-        else if (availableContribution <= 0.01d && availablePensionTransfer <= 0.01d)
+
+        RefreshProjection();
+    }
+
+    private void RefreshProjection()
+    {
+        var runtimeState = Context != null && Context.PeriodGameplay != null
+            ? Context.PeriodGameplay.Current
+            : PeriodRuntimeState.Empty;
+
+        if (runtimeState == null || !runtimeState.HasDefinition)
         {
-            SetMessage("В этом периоде нет средств для пополнения ПДС.");
+            _bonusLabel.text = "Софинансирование за период: -";
+            _projectionLabel.text = "Через 15 периодов: -";
+            return;
         }
-        else if (!string.IsNullOrWhiteSpace(_messageLabel.text)
-                 && (_messageLabel.text.Contains("нет средств")
-                     || _messageLabel.text.Contains("Сначала подключите ПДС")))
-        {
-            SetMessage(string.Empty);
-        }
+
+        NumericInputParser.TryParseNonNegativeAmount(ReadContributionText(), out var contributionAmount);
+        NumericInputParser.TryParseNonNegativeAmount(ReadPensionTransferText(), out var pensionTransferAmount);
+
+        var definition = runtimeState.Definition;
+        var openingBalance = definition.PdsAccount != null
+            ? Math.Max(0d, definition.PdsAccount.Balance)
+            : 0d;
+        var startingParticipationPeriodNumber = definition.PdsAccount != null
+                                                && definition.PdsAccount.ActivationPeriodNumber > 0
+                                                && runtimeState.PeriodNumber >= definition.PdsAccount.ActivationPeriodNumber
+            ? runtimeState.PeriodNumber - definition.PdsAccount.ActivationPeriodNumber + 1
+            : 1;
+        var firstPeriodBonus = ConsumerCreditMath.CalculatePdsContributionBonus(
+            Math.Max(0d, contributionAmount),
+            startingParticipationPeriodNumber);
+        var projectedBalance = ConsumerCreditMath.CalculatePdsProjectedBalance(
+            openingBalance,
+            contributionAmount,
+            pensionTransferAmount,
+            definition.EconomyContext != null ? definition.EconomyContext.DepositRate : null,
+            startingParticipationPeriodNumber,
+            ConsumerCreditMath.PdsProjectionPeriods);
+
+        _bonusLabel.text = $"Софинансирование за период: {EcuFormatter.FormatAmount(firstPeriodBonus)}";
+        _projectionLabel.text =
+            $"Через {ConsumerCreditMath.PdsProjectionPeriods} периодов: {EcuFormatter.FormatAmount(projectedBalance)}";
     }
 
     private void EnsureBuilt()
@@ -129,14 +183,14 @@ public sealed class PdsPopup : Popup
 
         _isBuilt = true;
 
-        var card = RuntimeUiFactory.CreateCard("PdsCard", transform, new Vector2(660f, 460f), false);
+        var card = RuntimeUiFactory.CreateCard("PdsCalculatorCard", transform, new Vector2(700f, 520f), false);
         var content = RuntimeUiFactory.CreateContentRoot(
             "Content",
             card,
             new RectOffset(28, 28, 26, 24),
             12f);
 
-        _titleLabel = RuntimeUiFactory.CreateTitle(content, "ПДС", TextAnchor.MiddleLeft);
+        _titleLabel = RuntimeUiFactory.CreateTitle(content, "Калькулятор ПДС", TextAnchor.MiddleLeft);
         _subtitleLabel = RuntimeUiFactory.CreateCaption(content, string.Empty);
 
         var infoPanel = RuntimeUiFactory.CreateSurface("InfoPanel", content, RuntimeUiFactory.PrimarySoftColor);
@@ -151,22 +205,29 @@ public sealed class PdsPopup : Popup
 
         _availableIncomeLabel = RuntimeUiFactory.CreateBodyText(infoPanel, string.Empty);
         _availablePensionLabel = RuntimeUiFactory.CreateCaption(infoPanel, string.Empty);
-        _currentPdsLabel = RuntimeUiFactory.CreateCaption(infoPanel, string.Empty);
+        _rateLabel = RuntimeUiFactory.CreateCaption(infoPanel, string.Empty);
 
-        RuntimeUiFactory.CreateCaption(content, "Взнос в ПДС из текущего дохода");
+        RuntimeUiFactory.CreateCaption(content, "Взнос в ПДС за период");
         _contributionInput = RuntimeUiFactory.CreateInputField(content, "Введите сумму");
         NumericInputParser.Configure(_contributionInput);
 
-        RuntimeUiFactory.CreateCaption(content, "Перевод пенсионных накоплений");
+        RuntimeUiFactory.CreateCaption(content, "Разовый перевод пенсионных накоплений");
         _pensionTransferInput = RuntimeUiFactory.CreateInputField(content, "Введите сумму");
         NumericInputParser.Configure(_pensionTransferInput);
 
+        _bonusLabel = RuntimeUiFactory.CreateBodyText(content, "Софинансирование за период: -");
+        _projectionLabel = RuntimeUiFactory.CreateBodyText(
+            content,
+            $"Через {ConsumerCreditMath.PdsProjectionPeriods} периодов: -");
+        RuntimeUiFactory.CreateCaption(
+            content,
+            "Расчёт предполагает одинаковый взнос в каждом периоде участия и сохраняет текущую ставку доходности.");
         _messageLabel = RuntimeUiFactory.CreateErrorText(content);
 
         RuntimeUiFactory.AddFlexibleSpacer(content);
         var actions = RuntimeUiFactory.CreateRow("Actions", content, 12f, TextAnchor.MiddleCenter);
         _cancelButton = RuntimeUiFactory.CreateSecondaryButton(actions, "Отмена", 46f);
-        _confirmButton = RuntimeUiFactory.CreatePrimaryButton(actions, "Сохранить", 46f);
+        _confirmButton = RuntimeUiFactory.CreatePrimaryButton(actions, "Вступить в ПДС", 46f);
     }
 
     private string ReadContributionText()

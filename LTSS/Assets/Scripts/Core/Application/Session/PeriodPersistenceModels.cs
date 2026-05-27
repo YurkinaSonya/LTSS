@@ -101,6 +101,8 @@ namespace Game.Core.Application.Session
         public string accountId;
         public double balance;
         public int activationPeriodNumber;
+        public int lastContributionPeriodNumber;
+        public double lastContributionAmount;
     }
 
     [Serializable]

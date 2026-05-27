@@ -482,7 +482,11 @@ namespace Game.Core.Application.Periods
                 return;
             }
 
-            _popupNavigation?.Push(Enums.PopupType.Pds, "pds_open");
+            var popupType = RequiresManualPdsEnrollment() && _current.Definition.PdsAccount == null
+                ? Enums.PopupType.PdsCalculator
+                : Enums.PopupType.Pds;
+
+            _popupNavigation?.Push(popupType, "pds_open");
             Publish(_current.With(statusMessage: string.Empty, lastError: string.Empty));
         }
 
@@ -885,7 +889,35 @@ namespace Game.Core.Application.Periods
             return true;
         }
 
-        public bool TrySubmitPds(string rawAmount, out string errorMessage)
+        public bool TryActivatePds(
+            string rawContributionAmount,
+            string rawPensionTransferAmount,
+            out string errorMessage)
+        {
+            return TryApplyPdsMutation(
+                rawContributionAmount,
+                rawPensionTransferAmount,
+                true,
+                out errorMessage);
+        }
+
+        public bool TrySubmitPds(
+            string rawContributionAmount,
+            string rawPensionTransferAmount,
+            out string errorMessage)
+        {
+            return TryApplyPdsMutation(
+                rawContributionAmount,
+                rawPensionTransferAmount,
+                false,
+                out errorMessage);
+        }
+
+        private bool TryApplyPdsMutation(
+            string rawContributionAmount,
+            string rawPensionTransferAmount,
+            bool allowActivation,
+            out string errorMessage)
         {
             errorMessage = string.Empty;
 
@@ -901,58 +933,136 @@ namespace Game.Core.Application.Periods
                 return false;
             }
 
-            var pensionReserve = _current.Definition.PensionReserve;
-
-            if (pensionReserve == null || pensionReserve.Balance <= 0.01d)
-            {
-                errorMessage = "Нет доступных пенсионных накоплений для перевода в ПДС.";
-                return false;
-            }
-
-            if (!NumericInputParser.TryParseNonNegativeAmount(rawAmount, out var amount) || amount <= 0d)
-            {
-                errorMessage = "Введите сумму перевода в ПДС.";
-                return false;
-            }
-
-            if (amount > pensionReserve.Balance + 0.01d)
-            {
-                errorMessage = $"Доступно только {EcuFormatter.FormatAmount(pensionReserve.Balance)} пенсионных накоплений.";
-                return false;
-            }
-
-            var nextPensionReserve = new PensionReserveRuntime(
-                Math.Max(0d, pensionReserve.Balance - amount),
-                pensionReserve.IsAccrualActive,
-                pensionReserve.HasEverBeenActive);
             var currentPds = _current.Definition.PdsAccount;
-            var nextPdsBalance = (currentPds != null ? currentPds.Balance : 0d) + amount;
+
+            if (!allowActivation && currentPds == null)
+            {
+                errorMessage = "Сначала подключите ПДС.";
+                return false;
+            }
+
+            if (!NumericInputParser.TryParseNonNegativeAmount(rawContributionAmount, out var contributionAmount)
+                || contributionAmount < 0d)
+            {
+                errorMessage = "Введите корректный взнос в ПДС.";
+                return false;
+            }
+
+            if (!NumericInputParser.TryParseNonNegativeAmount(rawPensionTransferAmount, out var pensionTransferAmount)
+                || pensionTransferAmount < 0d)
+            {
+                errorMessage = "Введите корректную сумму перевода пенсионных накоплений.";
+                return false;
+            }
+
+            if (!allowActivation
+                && contributionAmount <= 0.01d
+                && pensionTransferAmount <= 0.01d)
+            {
+                errorMessage = "Укажите сумму пополнения или перевода в ПДС.";
+                return false;
+            }
+
+            var availableContributionAmount = Math.Max(0d, _current.Summary.RemainingToAllocate);
+
+            if (contributionAmount > availableContributionAmount + 0.01d)
+            {
+                errorMessage = $"Доступно для взноса только {EcuFormatter.FormatAmount(availableContributionAmount)}.";
+                return false;
+            }
+
+            var pensionReserve = _current.Definition.PensionReserve;
+            var availablePensionAmount = pensionReserve != null
+                ? Math.Max(0d, pensionReserve.Balance)
+                : 0d;
+
+            if (pensionTransferAmount > availablePensionAmount + 0.01d)
+            {
+                errorMessage = $"Доступно только {EcuFormatter.FormatAmount(availablePensionAmount)} пенсионных накоплений.";
+                return false;
+            }
+
+            if (currentPds == null && !allowActivation)
+            {
+                errorMessage = "Сначала подключите ПДС.";
+                return false;
+            }
+
+            if (currentPds == null)
+            {
+                currentPds = new PdsAccountRuntime(
+                    Guid.NewGuid().ToString("N"),
+                    0d,
+                    _current.PeriodNumber,
+                    0,
+                    0d);
+            }
+
+            var previousContributionAmount = currentPds.LastContributionPeriodNumber == _current.PeriodNumber
+                ? Math.Max(0d, currentPds.LastContributionAmount)
+                : 0d;
+            var totalContributionAmount = previousContributionAmount + contributionAmount;
+            var currentPeriodBonusBefore = ConsumerCreditMath.CalculatePdsContributionBonus(
+                previousContributionAmount,
+                currentPds.ActivationPeriodNumber,
+                _current.PeriodNumber);
+            var currentPeriodBonusAfter = ConsumerCreditMath.CalculatePdsContributionBonus(
+                totalContributionAmount,
+                currentPds.ActivationPeriodNumber,
+                _current.PeriodNumber);
+            var bonusDelta = Math.Max(0d, currentPeriodBonusAfter - currentPeriodBonusBefore);
+            var nextPdsBalance = Math.Max(0d, currentPds.Balance) + contributionAmount + pensionTransferAmount + bonusDelta;
             var nextPds = new PdsAccountRuntime(
-                currentPds != null && !string.IsNullOrWhiteSpace(currentPds.AccountId)
+                !string.IsNullOrWhiteSpace(currentPds.AccountId)
                     ? currentPds.AccountId
                     : Guid.NewGuid().ToString("N"),
                 nextPdsBalance,
-                currentPds != null && currentPds.ActivationPeriodNumber > 0
+                currentPds.ActivationPeriodNumber > 0
                     ? currentPds.ActivationPeriodNumber
-                    : _current.PeriodNumber);
+                    : _current.PeriodNumber,
+                contributionAmount > 0d
+                    ? _current.PeriodNumber
+                    : currentPds.LastContributionPeriodNumber,
+                contributionAmount > 0d
+                    ? totalContributionAmount
+                    : currentPds.LastContributionAmount);
+            var nextPensionReserve = pensionTransferAmount > 0d && pensionReserve != null
+                ? new PensionReserveRuntime(
+                    Math.Max(0d, pensionReserve.Balance - pensionTransferAmount),
+                    pensionReserve.IsAccrualActive,
+                    pensionReserve.HasEverBeenActive)
+                : pensionReserve;
+            var nextOperations = new List<PeriodAssetOperationEntry>(_current.AssetOperations);
+
+            if (contributionAmount > 0d)
+            {
+                nextOperations.Add(new PeriodAssetOperationEntry(
+                    Guid.NewGuid().ToString("N"),
+                    ConsumerCreditMath.PdsAssetId,
+                    AssetOperationKind.Deposit,
+                    FundsSourceType.CurrentIncome,
+                    contributionAmount,
+                    DateTime.UtcNow.ToString("O")));
+            }
+
             var nextDefinition = BuildStateAwareDefinition(
                 _current.Definition,
                 pensionReserve: nextPensionReserve,
                 replacePensionReserve: true,
                 pdsAccount: nextPds,
                 replacePdsAccount: true);
-            var nextSummary = _calculationEngine.Recalculate(nextDefinition, _current.Expenses, _current.AssetOperations);
+            var nextSummary = _calculationEngine.Recalculate(nextDefinition, _current.Expenses, nextOperations);
             var nextState = new PeriodRuntimeState(
                 _current.RunId,
                 _current.PeriodNumber,
                 PeriodFlowState.PeriodActive,
                 nextDefinition,
                 _current.Expenses,
-                _current.AssetOperations,
+                nextOperations,
                 nextSummary,
                 AssetOperationDialogState.Closed,
                 _current.IsCheckpointSubmitted,
-                currentPds == null ? "ПДС активирована." : "ПДС пополнена.",
+                BuildPdsStatusMessage(_current.Definition.PdsAccount == null, contributionAmount, pensionTransferAmount),
                 string.Empty,
                 _current.SubmittedAtUtc,
                 true);
@@ -1515,9 +1625,69 @@ namespace Game.Core.Application.Periods
         {
             return definition != null
                    && definition.Meta != null
-                   && definition.Meta.HasFeature("pds")
-                   && definition.PensionReserve != null
-                   && definition.PensionReserve.HasEverBeenActive;
+                   && definition.Meta.HasFeature("pds");
+        }
+
+        private bool RequiresManualPdsEnrollment()
+        {
+            var currentRuntime = _sessionCoordinator != null
+                ? _sessionCoordinator.CurrentRuntime
+                : ClientRuntimeState.Empty;
+            var assignedGroupCode = currentRuntime != null
+                ? !string.IsNullOrWhiteSpace(currentRuntime.AuthenticatedRun.AssignedGroupCode)
+                    ? currentRuntime.AuthenticatedRun.AssignedGroupCode
+                    : currentRuntime.Bootstrap != null && currentRuntime.Bootstrap.Participant != null
+                        ? currentRuntime.Bootstrap.Participant.AssignedGroupCode
+                        : string.Empty
+                : string.Empty;
+
+            return string.Equals(
+                assignedGroupCode,
+                ConsumerCreditMath.ManualPdsEnrollmentGroupCode,
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string BuildPdsStatusMessage(
+            bool wasActivatedThisPeriod,
+            double contributionAmount,
+            double pensionTransferAmount)
+        {
+            if (wasActivatedThisPeriod && contributionAmount > 0.01d && pensionTransferAmount > 0.01d)
+            {
+                return "ПДС подключена и пополнена.";
+            }
+
+            if (wasActivatedThisPeriod && contributionAmount > 0.01d)
+            {
+                return "ПДС подключена и пополнена.";
+            }
+
+            if (wasActivatedThisPeriod && pensionTransferAmount > 0.01d)
+            {
+                return "ПДС подключена с переводом накоплений.";
+            }
+
+            if (wasActivatedThisPeriod)
+            {
+                return "ПДС подключена.";
+            }
+
+            if (contributionAmount > 0.01d && pensionTransferAmount > 0.01d)
+            {
+                return "ПДС пополнена и дополнена переводом накоплений.";
+            }
+
+            if (contributionAmount > 0.01d)
+            {
+                return "ПДС пополнена.";
+            }
+
+            if (pensionTransferAmount > 0.01d)
+            {
+                return "Пенсионные накопления переведены в ПДС.";
+            }
+
+            return "ПДС обновлена.";
         }
 
         private static bool HasActiveMortgage(IReadOnlyList<ConsumerCreditContractRuntime> credits)
@@ -2597,7 +2767,9 @@ namespace Game.Core.Application.Periods
             {
                 accountId = pdsAccount.AccountId,
                 balance = pdsAccount.Balance,
-                activationPeriodNumber = pdsAccount.ActivationPeriodNumber
+                activationPeriodNumber = pdsAccount.ActivationPeriodNumber,
+                lastContributionPeriodNumber = pdsAccount.LastContributionPeriodNumber,
+                lastContributionAmount = pdsAccount.LastContributionAmount
             };
         }
 

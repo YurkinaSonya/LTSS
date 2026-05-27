@@ -14,6 +14,13 @@ namespace Game.Core.Application.Periods
         public const double MortgageDownPaymentRate = 0.2d;
         public const double ApartmentOwnershipUjeBonus = 20d;
         public const double PensionContributionRate = 0.06d;
+        public const string ManualPdsEnrollmentGroupCode = "pds_calc";
+        public const int PdsProjectionPeriods = 15;
+        public const int PdsEnhancedMatchPeriods = 6;
+        public const double PdsBaseContributionThreshold = 3d;
+        public const double PdsEnhancedContributionThreshold = 33d;
+        public const double PdsBaseMatchAmount = 3d;
+        public const double PdsEnhancedMatchAmount = 6d;
         public const double EducationTargetIncomeMultiplier = 1.3d;
         public const double EducationIncomeMultiplier = 1.5d;
         public const int EducationIncomeDelayPeriods = 4;
@@ -80,6 +87,77 @@ namespace Game.Core.Application.Periods
         public static double CalculateEducationTargetAmount(double referenceIncomeEcu)
         {
             return Math.Max(0d, referenceIncomeEcu) * EducationTargetIncomeMultiplier;
+        }
+
+        public static double CalculatePdsContributionBonus(
+            double totalContributionAmount,
+            int activationPeriodNumber,
+            int currentPeriodNumber)
+        {
+            if (activationPeriodNumber <= 0 || currentPeriodNumber <= 0)
+            {
+                return CalculatePdsContributionBonus(totalContributionAmount, PdsEnhancedMatchPeriods + 1);
+            }
+
+            var participationPeriodNumber = currentPeriodNumber - activationPeriodNumber + 1;
+            return CalculatePdsContributionBonus(totalContributionAmount, participationPeriodNumber);
+        }
+
+        public static double CalculatePdsContributionBonus(
+            double totalContributionAmount,
+            int participationPeriodNumber)
+        {
+            var contribution = Math.Max(0d, totalContributionAmount);
+
+            if (contribution + 0.01d < PdsBaseContributionThreshold)
+            {
+                return 0d;
+            }
+
+            if (contribution + 0.01d >= PdsEnhancedContributionThreshold
+                && participationPeriodNumber > 0
+                && participationPeriodNumber <= PdsEnhancedMatchPeriods)
+            {
+                return PdsEnhancedMatchAmount;
+            }
+
+            return PdsBaseMatchAmount;
+        }
+
+        public static double CalculatePdsProjectedBalance(
+            double openingBalance,
+            double recurringContributionAmount,
+            double initialTransferAmount,
+            double? ratePercent,
+            int startingParticipationPeriodNumber = 1,
+            int projectionPeriods = PdsProjectionPeriods)
+        {
+            var balance = Math.Max(0d, openingBalance);
+            var contribution = Math.Max(0d, recurringContributionAmount);
+            var transfer = Math.Max(0d, initialTransferAmount);
+            var periods = projectionPeriods > 0 ? projectionPeriods : PdsProjectionPeriods;
+            var rate = NormalizePercentageToRate(ratePercent);
+
+            for (var index = 0; index < periods; index++)
+            {
+                if (index == 0 && transfer > 0d)
+                {
+                    balance += transfer;
+                }
+
+                if (contribution > 0d)
+                {
+                    balance += contribution;
+                    balance += CalculatePdsContributionBonus(contribution, startingParticipationPeriodNumber + index);
+                }
+
+                if (rate > 0d)
+                {
+                    balance *= 1d + rate;
+                }
+            }
+
+            return balance;
         }
 
         public static double CalculateAnnuityPayment(double principal, double? rawRatePercent, int periods = DefaultTermPeriods)

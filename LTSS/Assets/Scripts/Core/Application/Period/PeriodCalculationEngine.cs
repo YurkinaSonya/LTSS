@@ -82,6 +82,16 @@ namespace Game.Core.Application.Periods
                         ref cashBalance,
                         ref depositBalance,
                         ref incomeAllocatedToAssets);
+                    continue;
+                }
+
+                if (IsPdsAsset(operation.AssetId))
+                {
+                    ApplyPdsOperation(
+                        operation,
+                        ref cashBalance,
+                        ref depositBalance,
+                        ref incomeAllocatedToAssets);
                 }
             }
 
@@ -611,6 +621,31 @@ namespace Game.Core.Application.Periods
             }
         }
 
+        private static void ApplyPdsOperation(
+            PeriodAssetOperationEntry operation,
+            ref double cashBalance,
+            ref double depositBalance,
+            ref double incomeAllocatedToAssets)
+        {
+            if (operation.Kind != AssetOperationKind.Deposit)
+            {
+                return;
+            }
+
+            switch (operation.Source)
+            {
+                case FundsSourceType.CurrentIncome:
+                    incomeAllocatedToAssets += operation.Amount;
+                    break;
+                case FundsSourceType.Cash:
+                    cashBalance -= operation.Amount;
+                    break;
+                case FundsSourceType.Deposit:
+                    depositBalance -= operation.Amount;
+                    break;
+            }
+        }
+
         private static PeriodExpenseState FindExpenseState(
             IReadOnlyList<PeriodExpenseState> expenses,
             string expenseId)
@@ -641,6 +676,11 @@ namespace Game.Core.Application.Periods
         private static bool IsDepositAsset(string assetId)
         {
             return string.Equals(assetId, "deposit", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsPdsAsset(string assetId)
+        {
+            return string.Equals(assetId, ConsumerCreditMath.PdsAssetId, StringComparison.OrdinalIgnoreCase);
         }
 
         private static double GetInitialBalance(PeriodRuntimeDefinition definition, PeriodAssetType assetType)
