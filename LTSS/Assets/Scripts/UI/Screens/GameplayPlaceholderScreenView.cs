@@ -384,7 +384,8 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
 
             if (widgets.ApplyRequiredAmountButton != null)
             {
-                var showQuickApply = IsFixedAmountExpense(expenseDefinition);
+                var showQuickApply = IsFixedAmountExpense(expenseDefinition)
+                    || string.Equals(expenseDefinition.Id, "holiday", StringComparison.Ordinal);
                 widgets.ApplyRequiredAmountButton.gameObject.SetActive(showQuickApply);
                 widgets.ApplyRequiredAmountButton.interactable = canEdit && showQuickApply;
                 BindButton(

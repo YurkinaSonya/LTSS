@@ -256,6 +256,7 @@ namespace Game.Core.Application.Periods
                 sessionRoot,
                 economyContext,
                 residenceOwnership != null,
+                configuredPeriod != null && configuredPeriod.HasFeature("child_expense"),
                 configuredPeriod != null && configuredPeriod.HasFeature("education"),
                 educationGoal);
             var assetDefinitions = BuildAssetDefinitions(residenceOwnership != null, pdsAccount != null);
@@ -1293,6 +1294,7 @@ namespace Game.Core.Application.Periods
             JsonValue sessionRoot,
             PeriodEconomyContext economyContext,
             bool hasOwnedResidence,
+            bool hasChildExpenseFeature,
             bool hasEducationFeature,
             EducationGoalRuntime educationGoal)
         {
@@ -1315,6 +1317,12 @@ namespace Game.Core.Application.Periods
                 var title = GetString(expenseNode, "title", "name", "label");
                 var expenseId = NormalizeExpenseId(rawId, title);
 
+                if (!hasChildExpenseFeature
+                    && string.Equals(expenseId, "child_expense", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
                 if (string.IsNullOrWhiteSpace(expenseId) || HasExpense(result, expenseId))
                 {
                     continue;
@@ -1322,6 +1330,10 @@ namespace Game.Core.Application.Periods
 
                 var defaults = GetFallbackExpense(expenseId);
                 var required = GetBoolean(expenseNode, "required", "mandatory", "isRequired") ?? defaults.IsRequired;
+                if (string.Equals(expenseId, "child_expense", StringComparison.Ordinal))
+                {
+                    required = true;
+                }
                 var rawDefaultAmount = GetNumber(expenseNode, "defaultAmount", "initialAmount", "amount") ?? defaults.DefaultAmount;
                 var rawMinimumAmount = GetNumber(expenseNode, "minimumAmount", "minAmount", "requiredAmount") ?? defaults.MinimumAmount;
                 var rawMaximumAmount = GetNumber(expenseNode, "maximumAmount", "maxAmount", "limitAmount") ?? defaults.MaximumAmount;
@@ -1368,6 +1380,11 @@ namespace Game.Core.Application.Periods
 
             EnsureExpense(result, "leisure", economyContext);
             EnsureExpense(result, "holiday", economyContext);
+
+            if (hasChildExpenseFeature)
+            {
+                EnsureExpense(result, "child_expense", economyContext);
+            }
 
             if (hasEducationFeature)
             {
@@ -1883,6 +1900,7 @@ namespace Game.Core.Application.Periods
             {
                 "goods_services",
                 "housing_rent",
+                "child_expense",
                 "leisure",
                 "holiday",
                 "education"
@@ -1964,6 +1982,7 @@ namespace Game.Core.Application.Periods
             {
                 case "goods_services":
                 case "housing_rent":
+                case "child_expense":
                     return Math.Max(20d, minimumAmount);
                 default:
                     return minimumAmount;
@@ -1975,6 +1994,7 @@ namespace Game.Core.Application.Periods
             switch (expenseId)
             {
                 case "housing_rent":
+                case "child_expense":
                     maximumAmount = minimumAmount > 0d
                         ? minimumAmount
                         : maximumAmount;
@@ -2003,6 +2023,18 @@ namespace Game.Core.Application.Periods
                         0d,
                         30d,
                         "Обязательная статья периода.");
+                case "child_expense":
+                    return new PeriodExpenseDefinition(
+                        "child_expense",
+                        "Расходы на ребёнка",
+                        true,
+                        0d,
+                        15d,
+                        15d,
+                        new[] { FundsSourceType.CurrentIncome, FundsSourceType.Cash },
+                        0d,
+                        15d,
+                        "Обязательная фиксированная статья периода при активном feature flag.");
                 case "leisure":
                     return new PeriodExpenseDefinition(
                         "leisure",
@@ -2136,6 +2168,11 @@ namespace Game.Core.Application.Periods
                     maximumAmount = minimumAmount;
                     ujeReferenceAmount = minimumAmount;
                     return true;
+                case "child_expense":
+                    minimumAmount = income * 0.15d;
+                    maximumAmount = minimumAmount;
+                    ujeReferenceAmount = minimumAmount;
+                    return true;
                 case "holiday":
                     maximumAmount = income * 0.10d;
                     ujeReferenceAmount = maximumAmount;
@@ -2157,6 +2194,11 @@ namespace Game.Core.Application.Periods
             if (ContainsAny(source, "rent", "housing", "аренд", "жиль"))
             {
                 return "housing_rent";
+            }
+
+            if (ContainsAny(source, "child", "children", "kid", "реб", "дет"))
+            {
+                return "child_expense";
             }
 
             if (ContainsAny(source, "entertain", "leisure", "rest", "отдых", "развлеч"))

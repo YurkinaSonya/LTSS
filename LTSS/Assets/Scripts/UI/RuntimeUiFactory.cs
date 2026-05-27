@@ -588,8 +588,8 @@ public static class RuntimeUiFactory
         label.color = textColor;
         label.text = text ?? string.Empty;
         label.supportRichText = false;
-        label.horizontalOverflow = HorizontalWrapMode.Wrap;
-        label.verticalOverflow = VerticalWrapMode.Truncate;
+        label.horizontalOverflow = HorizontalWrapMode.Overflow;
+        label.verticalOverflow = VerticalWrapMode.Overflow;
         label.raycastTarget = false;
 
         return button;
@@ -678,4 +678,3 @@ public static class RuntimeUiFactory
         }
     }
 }
- 

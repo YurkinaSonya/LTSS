@@ -137,7 +137,8 @@ namespace Game.Core.Application.Periods
                 }
 
                 if (!string.Equals(expense.Id, "goods_services", StringComparison.Ordinal)
-                    && !string.Equals(expense.Id, "housing_rent", StringComparison.Ordinal))
+                    && !string.Equals(expense.Id, "housing_rent", StringComparison.Ordinal)
+                    && !string.Equals(expense.Id, "child_expense", StringComparison.Ordinal))
                 {
                     continue;
                 }

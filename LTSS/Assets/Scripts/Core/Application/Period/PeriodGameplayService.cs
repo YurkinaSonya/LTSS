@@ -245,14 +245,14 @@ namespace Game.Core.Application.Periods
 
             var definition = FindExpenseDefinition(expenseId);
 
-            if (!IsFixedAmountExpense(definition))
+            if (!TryResolveQuickApplyAmount(definition, out var targetAmount))
             {
                 return;
             }
 
             SetExpenseAmount(
                 expenseId,
-                definition.MinimumAmount.ToString("0.##", CultureInfo.InvariantCulture));
+                targetAmount.ToString("0.##", CultureInfo.InvariantCulture));
         }
 
         public void CycleExpenseSource(string expenseId)
@@ -1549,6 +1549,31 @@ namespace Game.Core.Application.Periods
                    && definition.MinimumAmount > 0.01d
                    && definition.MaximumAmount > 0.01d
                    && Math.Abs(definition.MaximumAmount - definition.MinimumAmount) <= 0.01d;
+        }
+
+        private static bool TryResolveQuickApplyAmount(PeriodExpenseDefinition definition, out double amount)
+        {
+            amount = 0d;
+
+            if (definition == null)
+            {
+                return false;
+            }
+
+            if (IsFixedAmountExpense(definition))
+            {
+                amount = definition.MinimumAmount;
+                return true;
+            }
+
+            if (string.Equals(definition.Id, "holiday", StringComparison.Ordinal)
+                && definition.MaximumAmount > 0.01d)
+            {
+                amount = definition.MaximumAmount;
+                return true;
+            }
+
+            return false;
         }
 
         private bool CanUseDebtForExpense(PeriodExpenseDefinition definition, FundsSourceType targetSource)
