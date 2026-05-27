@@ -5,22 +5,82 @@ namespace Game.Core.Application.Periods
 {
     public static class ConsumerCreditMath
     {
+        public const double DefaultBaseIncomeEcu = 100d;
         public const string ConsumerCreditKind = "consumer_credit";
         public const string MortgageKind = "mortgage";
         public const int DefaultTermPeriods = 5;
         public const int MortgageTermPeriods = 30;
-        public const double MortgagePropertyCost = 300d;
-        public const double MortgageDownPayment = 60d;
-        public const double MortgagePrincipal = 240d;
+        public const double ApartmentCostIncomeMultiplier = 3d;
+        public const double MortgageDownPaymentRate = 0.2d;
         public const double ApartmentOwnershipUjeBonus = 20d;
         public const double PensionContributionRate = 0.06d;
-        public const double EducationTargetAmount = 130d;
+        public const double EducationTargetIncomeMultiplier = 1.3d;
         public const double EducationIncomeMultiplier = 1.5d;
         public const int EducationIncomeDelayPeriods = 4;
         public const string ApartmentResidenceId = "apartment";
         public const string PdsAssetId = "pds";
         public const string DirectApartmentPurchaseMode = "direct";
         public const string MortgageApartmentPurchaseMode = "mortgage";
+
+        public static double CalculateApartmentCost(PeriodRuntimeDefinition definition)
+        {
+            return definition != null
+                ? CalculateApartmentCost(definition.EconomyContext)
+                : 0d;
+        }
+
+        public static double CalculateApartmentCost(PeriodEconomyContext economyContext)
+        {
+            return CalculateApartmentCost(ResolveReferenceIncome(economyContext));
+        }
+
+        public static double CalculateApartmentCost(double referenceIncomeEcu)
+        {
+            return Math.Max(0d, referenceIncomeEcu) * ApartmentCostIncomeMultiplier;
+        }
+
+        public static double CalculateMortgageDownPayment(PeriodRuntimeDefinition definition)
+        {
+            return definition != null
+                ? CalculateMortgageDownPayment(definition.EconomyContext)
+                : 0d;
+        }
+
+        public static double CalculateMortgageDownPayment(PeriodEconomyContext economyContext)
+        {
+            return CalculateApartmentCost(economyContext) * MortgageDownPaymentRate;
+        }
+
+        public static double CalculateMortgagePrincipal(PeriodRuntimeDefinition definition)
+        {
+            return definition != null
+                ? CalculateMortgagePrincipal(definition.EconomyContext)
+                : 0d;
+        }
+
+        public static double CalculateMortgagePrincipal(PeriodEconomyContext economyContext)
+        {
+            var apartmentCost = CalculateApartmentCost(economyContext);
+            var downPayment = CalculateMortgageDownPayment(economyContext);
+            return Math.Max(0d, apartmentCost - downPayment);
+        }
+
+        public static double CalculateEducationTargetAmount(PeriodRuntimeDefinition definition)
+        {
+            return definition != null
+                ? CalculateEducationTargetAmount(definition.EconomyContext)
+                : 0d;
+        }
+
+        public static double CalculateEducationTargetAmount(PeriodEconomyContext economyContext)
+        {
+            return CalculateEducationTargetAmount(ResolveReferenceIncome(economyContext));
+        }
+
+        public static double CalculateEducationTargetAmount(double referenceIncomeEcu)
+        {
+            return Math.Max(0d, referenceIncomeEcu) * EducationTargetIncomeMultiplier;
+        }
 
         public static double CalculateAnnuityPayment(double principal, double? rawRatePercent, int periods = DefaultTermPeriods)
         {
@@ -65,9 +125,6 @@ namespace Game.Core.Application.Periods
             }
 
             var income = Math.Max(0d, definition.CalculationSettings.CurrentIncomeEcu);
-            var inflationMultiplier = definition.EconomyContext != null
-                ? Math.Max(0.0001d, definition.EconomyContext.ExpenseInflationMultiplier)
-                : 1d;
             var mandatoryBaseAmount = 0d;
 
             for (var index = 0; index < definition.ExpenseDefinitions.Count; index++)
@@ -85,9 +142,7 @@ namespace Game.Core.Application.Periods
                     continue;
                 }
 
-                mandatoryBaseAmount += expense.MinimumAmount > 0d
-                    ? expense.MinimumAmount / inflationMultiplier
-                    : 0d;
+                mandatoryBaseAmount += Math.Max(0d, expense.MinimumAmount);
             }
 
             return Math.Max(0d, income - mandatoryBaseAmount);
@@ -177,6 +232,28 @@ namespace Game.Core.Application.Periods
                 : 1d;
 
             return basePrice * currentInflationMultiplier / purchaseInflationMultiplier;
+        }
+
+        private static double ResolveReferenceIncome(PeriodEconomyContext economyContext)
+        {
+            if (economyContext == null)
+            {
+                return DefaultBaseIncomeEcu;
+            }
+
+            if (economyContext.ReferenceIncomeEcu > 0d)
+            {
+                return economyContext.ReferenceIncomeEcu;
+            }
+
+            if (economyContext.CurrentIncomeEcu > 0d)
+            {
+                return economyContext.CurrentIncomeEcu;
+            }
+
+            return economyContext.BaseIncomeEcu > 0d
+                ? economyContext.BaseIncomeEcu
+                : DefaultBaseIncomeEcu;
         }
     }
 }

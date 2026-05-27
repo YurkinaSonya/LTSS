@@ -295,7 +295,9 @@ namespace Game.Core.Application.Periods
             var minimumAmount = expenseDefinition.MinimumAmount > 0d
                 ? expenseDefinition.MinimumAmount
                 : ScaleThreshold(definition, GoodsServicesMinBase);
-            var upperThreshold = ScaleThreshold(definition, GoodsServicesUpperBase);
+            var upperThreshold = expenseDefinition.UjeReferenceAmount > minimumAmount + ComparisonTolerance
+                ? expenseDefinition.UjeReferenceAmount
+                : ScaleThreshold(definition, GoodsServicesUpperBase);
 
             if (amount + ComparisonTolerance < minimumAmount)
             {
@@ -415,7 +417,9 @@ namespace Game.Core.Application.Periods
             switch (expenseDefinition.Id)
             {
                 case "goods_services":
-                    return ScaleThreshold(definition, GoodsServicesUpperBase);
+                    return expenseDefinition.UjeReferenceAmount > 0d
+                        ? Math.Max(expenseDefinition.MinimumAmount, expenseDefinition.UjeReferenceAmount)
+                        : ScaleThreshold(definition, GoodsServicesUpperBase);
                 case "housing_rent":
                     return expenseDefinition.MinimumAmount > 0d
                         ? expenseDefinition.MinimumAmount

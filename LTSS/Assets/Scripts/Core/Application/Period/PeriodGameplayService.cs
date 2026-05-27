@@ -734,10 +734,11 @@ namespace Game.Core.Application.Periods
             }
 
             var summary = _current.Summary ?? PeriodCalculationSummary.Empty;
+            var apartmentCost = ConsumerCreditMath.CalculateApartmentCost(_current.Definition);
 
-            if (summary.CashBalance + 0.01d < ConsumerCreditMath.MortgagePropertyCost)
+            if (summary.CashBalance + 0.01d < apartmentCost)
             {
-                errorMessage = $"Для покупки нужно {EcuFormatter.FormatAmount(ConsumerCreditMath.MortgagePropertyCost)} наличными.";
+                errorMessage = $"Для покупки нужно {EcuFormatter.FormatAmount(apartmentCost)} наличными.";
                 return false;
             }
 
@@ -750,7 +751,7 @@ namespace Game.Core.Application.Periods
                 definition,
                 residenceOwnership: nextResidence,
                 replaceResidenceOwnership: true,
-                initialCashBalance: definition.InitialCashBalance - ConsumerCreditMath.MortgagePropertyCost);
+                initialCashBalance: definition.InitialCashBalance - apartmentCost);
             var nextExpenses = BuildResidenceAwareExpenseStates(_current.Expenses, nextDefinition.ExpenseDefinitions);
             var nextSummary = _calculationEngine.Recalculate(nextDefinition, nextExpenses, _current.AssetOperations);
             var nextState = new PeriodRuntimeState(
@@ -802,10 +803,12 @@ namespace Game.Core.Application.Periods
             }
 
             var summary = _current.Summary ?? PeriodCalculationSummary.Empty;
+            var downPayment = ConsumerCreditMath.CalculateMortgageDownPayment(_current.Definition);
+            var mortgagePrincipal = ConsumerCreditMath.CalculateMortgagePrincipal(_current.Definition);
 
-            if (summary.CashBalance + 0.01d < ConsumerCreditMath.MortgageDownPayment)
+            if (summary.CashBalance + 0.01d < downPayment)
             {
-                errorMessage = $"Для первоначального взноса нужно {EcuFormatter.FormatAmount(ConsumerCreditMath.MortgageDownPayment)} наличными.";
+                errorMessage = $"Для первоначального взноса нужно {EcuFormatter.FormatAmount(downPayment)} наличными.";
                 return false;
             }
 
@@ -814,7 +817,7 @@ namespace Game.Core.Application.Periods
                 ? definition.EconomyContext.MortgageRate
                 : null;
             var periodicPayment = ConsumerCreditMath.CalculateAnnuityPayment(
-                ConsumerCreditMath.MortgagePrincipal,
+                mortgagePrincipal,
                 ratePercent,
                 ConsumerCreditMath.MortgageTermPeriods);
             var nextCredits = new List<ConsumerCreditContractRuntime>(definition.ConsumerCredits ?? Array.Empty<ConsumerCreditContractRuntime>())
@@ -823,8 +826,8 @@ namespace Game.Core.Application.Periods
                     ConsumerCreditMath.MortgageKind,
                     Guid.NewGuid().ToString("N"),
                     _current.PeriodNumber,
-                    ConsumerCreditMath.MortgagePrincipal,
-                    ConsumerCreditMath.MortgagePrincipal,
+                    mortgagePrincipal,
+                    mortgagePrincipal,
                     periodicPayment,
                     ratePercent ?? 0d,
                     ConsumerCreditMath.MortgageTermPeriods)
@@ -839,7 +842,7 @@ namespace Game.Core.Application.Periods
                 consumerCredits: nextCredits,
                 residenceOwnership: nextResidence,
                 replaceResidenceOwnership: true,
-                initialCashBalance: definition.InitialCashBalance - ConsumerCreditMath.MortgageDownPayment);
+                initialCashBalance: definition.InitialCashBalance - downPayment);
             var nextExpenses = BuildResidenceAwareExpenseStates(_current.Expenses, nextDefinition.ExpenseDefinitions);
             var nextSummary = _calculationEngine.Recalculate(nextDefinition, nextExpenses, _current.AssetOperations);
             var nextState = new PeriodRuntimeState(
@@ -2034,6 +2037,7 @@ namespace Game.Core.Application.Periods
                 currentEconomy.MortgageRate,
                 currentEconomy.BaseIncomeEcu,
                 0d,
+                currentEconomy.ReferenceIncomeEcu,
                 currentEconomy.ExpenseInflationMultiplier,
                 currentEconomy.CurrentInflationMultiplier,
                 currentEconomy.CashValueMultiplier,
@@ -2400,10 +2404,7 @@ namespace Game.Core.Application.Periods
 
         private static PeriodExpenseDefinition BuildHousingRentExpenseDefinition(PeriodEconomyContext economyContext)
         {
-            var inflationMultiplier = economyContext != null
-                ? Math.Max(0.0001d, economyContext.ExpenseInflationMultiplier)
-                : 1d;
-            var amount = 20d * inflationMultiplier;
+            var amount = Math.Max(0d, ConsumerCreditMath.CalculateApartmentCost(economyContext) * 0.10d);
 
             return new PeriodExpenseDefinition(
                 "housing_rent",
@@ -2425,7 +2426,7 @@ namespace Game.Core.Application.Periods
         {
             return new ResidenceOwnershipRuntime(
                 ConsumerCreditMath.ApartmentResidenceId,
-                ConsumerCreditMath.MortgagePropertyCost,
+                ConsumerCreditMath.CalculateApartmentCost(economyContext),
                 periodNumber,
                 economyContext != null
                     ? Math.Max(0.0001d, economyContext.ExpenseInflationMultiplier)

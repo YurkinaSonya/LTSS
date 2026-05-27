@@ -87,16 +87,19 @@ public sealed class MortgagePopup : Popup
         var ratePercent = definition.EconomyContext != null && definition.EconomyContext.MortgageRate.HasValue
             ? definition.EconomyContext.MortgageRate.Value
             : 0d;
+        var apartmentCost = ConsumerCreditMath.CalculateApartmentCost(definition);
+        var downPayment = ConsumerCreditMath.CalculateMortgageDownPayment(definition);
+        var principal = ConsumerCreditMath.CalculateMortgagePrincipal(definition);
         var payment = ConsumerCreditMath.CalculateAnnuityPayment(
-            ConsumerCreditMath.MortgagePrincipal,
+            principal,
             ratePercent,
             ConsumerCreditMath.MortgageTermPeriods);
 
         _titleLabel.text = "Ипотека";
         _subtitleLabel.text = "Фиксированная сделка покупки жилья.";
-        _costLabel.text = $"Стоимость жилья: {EcuFormatter.FormatAmount(ConsumerCreditMath.MortgagePropertyCost)}";
-        _downPaymentLabel.text = $"Первоначальный взнос: {EcuFormatter.FormatAmount(ConsumerCreditMath.MortgageDownPayment)}";
-        _principalLabel.text = $"Сумма ипотеки: {EcuFormatter.FormatAmount(ConsumerCreditMath.MortgagePrincipal)}";
+        _costLabel.text = $"Стоимость жилья: {EcuFormatter.FormatAmount(apartmentCost)}";
+        _downPaymentLabel.text = $"Первоначальный взнос: {EcuFormatter.FormatAmount(downPayment)}";
+        _principalLabel.text = $"Сумма ипотеки: {EcuFormatter.FormatAmount(principal)}";
         _rateLabel.text = $"Ставка периода: {ratePercent.ToString("0.##", CultureInfo.InvariantCulture)}%";
         _termLabel.text = $"Срок: {ConsumerCreditMath.MortgageTermPeriods} периодов";
         _paymentLabel.text = $"Платёж за период: {EcuFormatter.FormatAmount(payment)}";

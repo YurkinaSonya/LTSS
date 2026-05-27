@@ -253,6 +253,7 @@ namespace Game.Domain.GameFlow
             null,
             100d,
             100d,
+            100d,
             1d,
             1d,
             1d,
@@ -268,6 +269,7 @@ namespace Game.Domain.GameFlow
         public double? MortgageRate { get; }
         public double BaseIncomeEcu { get; }
         public double CurrentIncomeEcu { get; }
+        public double ReferenceIncomeEcu { get; }
         public double ExpenseInflationMultiplier { get; }
         public double CurrentInflationMultiplier { get; }
         public double CashValueMultiplier { get; }
@@ -284,6 +286,7 @@ namespace Game.Domain.GameFlow
             double? mortgageRate,
             double baseIncomeEcu,
             double currentIncomeEcu,
+            double referenceIncomeEcu,
             double expenseInflationMultiplier,
             double currentInflationMultiplier,
             double cashValueMultiplier,
@@ -299,6 +302,7 @@ namespace Game.Domain.GameFlow
             MortgageRate = mortgageRate;
             BaseIncomeEcu = baseIncomeEcu;
             CurrentIncomeEcu = currentIncomeEcu;
+            ReferenceIncomeEcu = referenceIncomeEcu;
             ExpenseInflationMultiplier = expenseInflationMultiplier;
             CurrentInflationMultiplier = currentInflationMultiplier;
             CashValueMultiplier = cashValueMultiplier;

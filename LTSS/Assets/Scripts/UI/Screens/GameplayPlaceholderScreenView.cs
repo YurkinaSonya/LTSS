@@ -1061,7 +1061,9 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
             : null;
         var targetAmount = goal != null && goal.TargetAmount > 0d
             ? goal.TargetAmount
-            : ConsumerCreditMath.EducationTargetAmount;
+            : runtimeState != null && runtimeState.HasDefinition
+                ? ConsumerCreditMath.CalculateEducationTargetAmount(runtimeState.Definition)
+                : ConsumerCreditMath.CalculateEducationTargetAmount(ConsumerCreditMath.DefaultBaseIncomeEcu);
         var committedAmount = goal != null
             ? Math.Max(0d, goal.AccumulatedAmount)
             : 0d;

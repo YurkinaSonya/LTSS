@@ -240,7 +240,7 @@ namespace Game.Core.Application.Periods
                 : ResolveResidenceOwnership(runId, periodNumber);
             var educationGoal = isFirstMainPeriod
                 ? null
-                : ResolveEducationGoal(runId, periodNumber, configuredPeriod);
+                : ResolveEducationGoal(runId, periodNumber, configuredPeriod, economyContext);
             economyContext = ApplyEducationIncomeBoost(economyContext, educationGoal, periodNumber);
             var pensionReserve = ResolvePensionReserve(
                 runId,
@@ -594,7 +594,8 @@ namespace Game.Core.Application.Periods
         private EducationGoalRuntime ResolveEducationGoal(
             string runId,
             int periodNumber,
-            SessionPeriodRuntime configuredPeriod)
+            SessionPeriodRuntime configuredPeriod,
+            PeriodEconomyContext economyContext)
         {
             var educationFeatureActive = configuredPeriod != null && configuredPeriod.HasFeature("education");
 
@@ -608,7 +609,7 @@ namespace Game.Core.Application.Periods
                 || string.IsNullOrWhiteSpace(snapshot.rawPeriodStateJson))
             {
                 return educationFeatureActive
-                    ? CreateEmptyEducationGoal()
+                    ? CreateEmptyEducationGoal(economyContext)
                     : null;
             }
 
@@ -619,15 +620,15 @@ namespace Game.Core.Application.Periods
             {
                 _logger.Warning($"Failed to deserialize persisted education snapshot. {deserializeError}");
                 return educationFeatureActive
-                    ? CreateEmptyEducationGoal()
+                    ? CreateEmptyEducationGoal(economyContext)
                     : null;
             }
 
-            var restoredGoal = RestoreEducationGoal(dto != null ? dto.educationGoal : null);
+            var restoredGoal = RestoreEducationGoal(dto != null ? dto.educationGoal : null, economyContext);
 
             if (snapshot.periodNumber == periodNumber)
             {
-                return restoredGoal ?? (educationFeatureActive ? CreateEmptyEducationGoal() : null);
+                return restoredGoal ?? (educationFeatureActive ? CreateEmptyEducationGoal(economyContext) : null);
             }
 
             if (snapshot.isCheckpointSubmitted && snapshot.periodNumber == periodNumber - 1)
@@ -635,11 +636,12 @@ namespace Game.Core.Application.Periods
                 var advancedGoal = AdvanceEducationGoal(
                     restoredGoal,
                     snapshot.periodNumber,
-                    dto != null ? dto.expenses : null);
-                return advancedGoal ?? (educationFeatureActive ? CreateEmptyEducationGoal() : null);
+                    dto != null ? dto.expenses : null,
+                    economyContext);
+                return advancedGoal ?? (educationFeatureActive ? CreateEmptyEducationGoal(economyContext) : null);
             }
 
-            return restoredGoal ?? (educationFeatureActive ? CreateEmptyEducationGoal() : null);
+            return restoredGoal ?? (educationFeatureActive ? CreateEmptyEducationGoal(economyContext) : null);
         }
 
         private static IReadOnlyList<ConsumerCreditContractRuntime> RestoreConsumerCredits(
@@ -725,7 +727,9 @@ namespace Game.Core.Application.Periods
                 Math.Max(0, snapshot.activationPeriodNumber));
         }
 
-        private static EducationGoalRuntime RestoreEducationGoal(EducationGoalSnapshotDto snapshot)
+        private static EducationGoalRuntime RestoreEducationGoal(
+            EducationGoalSnapshotDto snapshot,
+            PeriodEconomyContext economyContext)
         {
             if (snapshot == null)
             {
@@ -734,7 +738,7 @@ namespace Game.Core.Application.Periods
 
             var targetAmount = snapshot.targetAmount > 0d
                 ? snapshot.targetAmount
-                : ConsumerCreditMath.EducationTargetAmount;
+                : ConsumerCreditMath.CalculateEducationTargetAmount(economyContext);
             var accumulatedAmount = Math.Max(0d, Math.Min(targetAmount, snapshot.accumulatedAmount));
 
             if (accumulatedAmount <= 0.0001d
@@ -778,12 +782,13 @@ namespace Game.Core.Application.Periods
         private static EducationGoalRuntime AdvanceEducationGoal(
             EducationGoalRuntime currentGoal,
             int closedPeriodNumber,
-            IReadOnlyList<PeriodExpenseStateSnapshotDto> expenseSnapshots)
+            IReadOnlyList<PeriodExpenseStateSnapshotDto> expenseSnapshots,
+            PeriodEconomyContext economyContext)
         {
-            var baseGoal = currentGoal ?? CreateEmptyEducationGoal();
+            var baseGoal = currentGoal ?? CreateEmptyEducationGoal(economyContext);
             var targetAmount = baseGoal.TargetAmount > 0d
                 ? baseGoal.TargetAmount
-                : ConsumerCreditMath.EducationTargetAmount;
+                : ConsumerCreditMath.CalculateEducationTargetAmount(economyContext);
             var currentContribution = ResolveEducationContribution(expenseSnapshots);
             var accumulatedAmount = Math.Min(
                 targetAmount,
@@ -833,11 +838,11 @@ namespace Game.Core.Application.Periods
             return 0d;
         }
 
-        private static EducationGoalRuntime CreateEmptyEducationGoal()
+        private static EducationGoalRuntime CreateEmptyEducationGoal(PeriodEconomyContext economyContext)
         {
             return new EducationGoalRuntime(
                 0d,
-                ConsumerCreditMath.EducationTargetAmount,
+                ConsumerCreditMath.CalculateEducationTargetAmount(economyContext),
                 0,
                 0);
         }
@@ -1326,15 +1331,10 @@ namespace Game.Core.Application.Periods
                 var allowedSources = ParseAllowedSources(expenseNode.FindFirstDescendantProperty("allowedSources", "sources", "fundSources"));
                 rawMinimumAmount = ApplyRequiredMinimumOverride(expenseId, required, rawMinimumAmount);
                 ApplyFixedExpenseBounds(expenseId, rawMinimumAmount, ref rawMaximumAmount);
-                var inflationMultiplier = economyContext != null
-                    ? Math.Max(0.0001d, economyContext.ExpenseInflationMultiplier)
-                    : 1d;
-                var defaultAmount = ApplyInflationMultiplier(rawDefaultAmount, inflationMultiplier);
-                var minimumAmount = ApplyInflationMultiplier(rawMinimumAmount, inflationMultiplier);
-                var maximumAmount = rawMaximumAmount > 0d
-                    ? ApplyInflationMultiplier(rawMaximumAmount, inflationMultiplier)
-                    : 0d;
-                var ujeReference = ApplyInflationMultiplier(rawUjeReference, inflationMultiplier);
+                var defaultAmount = ResolveExpenseDefaultAmount(expenseId, rawDefaultAmount, economyContext);
+                var minimumAmount = ResolveExpenseMinimumAmount(expenseId, rawMinimumAmount, economyContext);
+                var maximumAmount = ResolveExpenseMaximumAmount(expenseId, rawMaximumAmount, economyContext);
+                var ujeReference = ResolveExpenseUjeReferenceAmount(expenseId, rawUjeReference, economyContext);
 
                 if (allowedSources.Count == 0)
                 {
@@ -1371,7 +1371,7 @@ namespace Game.Core.Application.Periods
 
             if (hasEducationFeature)
             {
-                EnsureEducationExpense(result, educationGoal);
+                EnsureEducationExpense(result, educationGoal, economyContext);
             }
 
             return SortExpenses(result);
@@ -1494,6 +1494,8 @@ namespace Game.Core.Application.Periods
                 }
             }
 
+            var referenceIncomeEcu = currentIncomeEcu;
+
             if (hasPermanentIncomeLoss)
             {
                 currentIncomeEcu = 0d;
@@ -1513,6 +1515,7 @@ namespace Game.Core.Application.Periods
                 periodStatistics != null ? periodStatistics.MortgageRate : null,
                 baseIncomeEcu,
                 currentIncomeEcu,
+                referenceIncomeEcu,
                 expenseInflationMultiplier,
                 currentInflationMultiplier,
                 cashValueMultiplier,
@@ -1543,6 +1546,7 @@ namespace Game.Core.Application.Periods
                 economyContext.MortgageRate,
                 economyContext.BaseIncomeEcu,
                 economyContext.CurrentIncomeEcu * ConsumerCreditMath.EducationIncomeMultiplier,
+                economyContext.ReferenceIncomeEcu * ConsumerCreditMath.EducationIncomeMultiplier,
                 economyContext.ExpenseInflationMultiplier,
                 economyContext.CurrentInflationMultiplier,
                 economyContext.CashValueMultiplier,
@@ -1790,7 +1794,8 @@ namespace Game.Core.Application.Periods
 
         private static void EnsureEducationExpense(
             ICollection<PeriodExpenseDefinition> definitions,
-            EducationGoalRuntime educationGoal)
+            EducationGoalRuntime educationGoal,
+            PeriodEconomyContext economyContext)
         {
             var toRemove = new List<PeriodExpenseDefinition>();
 
@@ -1812,7 +1817,7 @@ namespace Game.Core.Application.Periods
                 : 0d;
             var targetAmount = educationGoal != null && educationGoal.TargetAmount > 0d
                 ? educationGoal.TargetAmount
-                : ConsumerCreditMath.EducationTargetAmount;
+                : ConsumerCreditMath.CalculateEducationTargetAmount(economyContext);
             var remainingAmount = Math.Max(0d, targetAmount - accumulatedAmount);
 
             definitions.Add(new PeriodExpenseDefinition(
@@ -1858,22 +1863,16 @@ namespace Game.Core.Application.Periods
                 return null;
             }
 
-            var inflationMultiplier = economyContext != null
-                ? Math.Max(0.0001d, economyContext.ExpenseInflationMultiplier)
-                : 1d;
-
             return new PeriodExpenseDefinition(
                 definition.Id,
                 definition.Title,
                 definition.IsRequired,
-                ApplyInflationMultiplier(definition.DefaultAmount, inflationMultiplier),
-                ApplyInflationMultiplier(definition.MinimumAmount, inflationMultiplier),
-                definition.MaximumAmount > 0d
-                    ? ApplyInflationMultiplier(definition.MaximumAmount, inflationMultiplier)
-                    : 0d,
+                ResolveExpenseDefaultAmount(definition.Id, definition.DefaultAmount, economyContext),
+                ResolveExpenseMinimumAmount(definition.Id, definition.MinimumAmount, economyContext),
+                ResolveExpenseMaximumAmount(definition.Id, definition.MaximumAmount, economyContext),
                 definition.AllowedSources,
                 definition.UjeWeight,
-                ApplyInflationMultiplier(definition.UjeReferenceAmount, inflationMultiplier),
+                ResolveExpenseUjeReferenceAmount(definition.Id, definition.UjeReferenceAmount, economyContext),
                 definition.Description);
         }
 
@@ -1914,6 +1913,14 @@ namespace Game.Core.Application.Periods
             return ordered;
         }
 
+        private static double ApplyInflationMultiplier(double amount, PeriodEconomyContext economyContext)
+        {
+            var multiplier = economyContext != null
+                ? Math.Max(0.0001d, economyContext.ExpenseInflationMultiplier)
+                : 1d;
+            return ApplyInflationMultiplier(amount, multiplier);
+        }
+
         private static double ApplyInflationMultiplier(double amount, double multiplier)
         {
             if (amount <= 0d)
@@ -1922,6 +1929,28 @@ namespace Game.Core.Application.Periods
             }
 
             return amount * Math.Max(0.0001d, multiplier);
+        }
+
+        private static double ResolveReferenceIncome(PeriodEconomyContext economyContext)
+        {
+            if (economyContext == null)
+            {
+                return ConsumerCreditMath.DefaultBaseIncomeEcu;
+            }
+
+            if (economyContext.ReferenceIncomeEcu > 0d)
+            {
+                return economyContext.ReferenceIncomeEcu;
+            }
+
+            if (economyContext.CurrentIncomeEcu > 0d)
+            {
+                return economyContext.CurrentIncomeEcu;
+            }
+
+            return economyContext.BaseIncomeEcu > 0d
+                ? economyContext.BaseIncomeEcu
+                : ConsumerCreditMath.DefaultBaseIncomeEcu;
         }
 
         private static double ApplyRequiredMinimumOverride(string expenseId, bool isRequired, double minimumAmount)
@@ -1968,11 +1997,11 @@ namespace Game.Core.Application.Periods
                         "Аренда жилья",
                         true,
                         0d,
-                        20d,
-                        20d,
+                        30d,
+                        30d,
                         new[] { FundsSourceType.CurrentIncome, FundsSourceType.Cash },
                         0d,
-                        20d,
+                        30d,
                         "Обязательная статья периода.");
                 case "leisure":
                     return new PeriodExpenseDefinition(
@@ -2005,10 +2034,10 @@ namespace Game.Core.Application.Periods
                         false,
                         0d,
                         0d,
-                        ConsumerCreditMath.EducationTargetAmount,
+                        ConsumerCreditMath.CalculateEducationTargetAmount(ConsumerCreditMath.DefaultBaseIncomeEcu),
                         new[] { FundsSourceType.CurrentIncome, FundsSourceType.Cash, FundsSourceType.Deposit },
                         0d,
-                        ConsumerCreditMath.EducationTargetAmount,
+                        ConsumerCreditMath.CalculateEducationTargetAmount(ConsumerCreditMath.DefaultBaseIncomeEcu),
                         "Долгосрочная цель на повышение дохода.");
                 case "goods_services":
                 default:
@@ -2017,12 +2046,102 @@ namespace Game.Core.Application.Periods
                         "Покупка товаров и услуг",
                         true,
                         0d,
-                        20d,
-                        0d,
+                        40d,
+                        60d,
                         new[] { FundsSourceType.CurrentIncome, FundsSourceType.Cash },
                         0d,
                         60d,
                         "Базовая бытовая статья расходов.");
+            }
+        }
+
+        private static double ResolveExpenseDefaultAmount(
+            string expenseId,
+            double rawDefaultAmount,
+            PeriodEconomyContext economyContext)
+        {
+            if (TryGetIncomeBasedExpenseDefaults(expenseId, economyContext, out var defaultAmount, out _, out _, out _))
+            {
+                return defaultAmount;
+            }
+
+            return ApplyInflationMultiplier(rawDefaultAmount, economyContext);
+        }
+
+        private static double ResolveExpenseMinimumAmount(
+            string expenseId,
+            double rawMinimumAmount,
+            PeriodEconomyContext economyContext)
+        {
+            if (TryGetIncomeBasedExpenseDefaults(expenseId, economyContext, out _, out var minimumAmount, out _, out _))
+            {
+                return minimumAmount;
+            }
+
+            return ApplyInflationMultiplier(rawMinimumAmount, economyContext);
+        }
+
+        private static double ResolveExpenseMaximumAmount(
+            string expenseId,
+            double rawMaximumAmount,
+            PeriodEconomyContext economyContext)
+        {
+            if (TryGetIncomeBasedExpenseDefaults(expenseId, economyContext, out _, out _, out var maximumAmount, out _))
+            {
+                return maximumAmount;
+            }
+
+            return rawMaximumAmount > 0d
+                ? ApplyInflationMultiplier(rawMaximumAmount, economyContext)
+                : 0d;
+        }
+
+        private static double ResolveExpenseUjeReferenceAmount(
+            string expenseId,
+            double rawUjeReferenceAmount,
+            PeriodEconomyContext economyContext)
+        {
+            if (TryGetIncomeBasedExpenseDefaults(expenseId, economyContext, out _, out _, out _, out var ujeReferenceAmount))
+            {
+                return ujeReferenceAmount;
+            }
+
+            return ApplyInflationMultiplier(rawUjeReferenceAmount, economyContext);
+        }
+
+        private static bool TryGetIncomeBasedExpenseDefaults(
+            string expenseId,
+            PeriodEconomyContext economyContext,
+            out double defaultAmount,
+            out double minimumAmount,
+            out double maximumAmount,
+            out double ujeReferenceAmount)
+        {
+            defaultAmount = 0d;
+            minimumAmount = 0d;
+            maximumAmount = 0d;
+            ujeReferenceAmount = 0d;
+
+            var income = ResolveReferenceIncome(economyContext);
+
+            switch (expenseId)
+            {
+                case "goods_services":
+                    minimumAmount = income * 0.40d;
+                    maximumAmount = income * 0.60d;
+                    ujeReferenceAmount = maximumAmount;
+                    return true;
+                case "housing_rent":
+                    minimumAmount = income * 0.30d;
+                    maximumAmount = minimumAmount;
+                    ujeReferenceAmount = minimumAmount;
+                    return true;
+                case "holiday":
+                    maximumAmount = income * 0.10d;
+                    ujeReferenceAmount = maximumAmount;
+                    return true;
+                default:
+                    return false;
             }
         }
 

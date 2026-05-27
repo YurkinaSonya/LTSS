@@ -86,12 +86,13 @@ public sealed class ApartmentPurchasePopup : Popup
             return;
         }
 
+        var apartmentCost = ConsumerCreditMath.CalculateApartmentCost(latestRuntime.Definition);
+
         _titleLabel.text = "Купить квартиру";
         _subtitleLabel.text = "Собственное жильё убирает аренду и стабильно добавляет 20 УЖЭ.";
         _descriptionLabel.text =
             "Квартира становится вашим активом, может быть продана позднее и переоценивается вместе с инфляцией периода.";
-        _priceLabel.text =
-            $"Полная стоимость покупки: {EcuFormatter.FormatAmount(ConsumerCreditMath.MortgagePropertyCost)}";
+        _priceLabel.text = $"Полная стоимость покупки: {EcuFormatter.FormatAmount(apartmentCost)}";
 
         if (string.IsNullOrWhiteSpace(_messageLabel.text) && !string.IsNullOrWhiteSpace(latestRuntime.StatusMessage))
         {
