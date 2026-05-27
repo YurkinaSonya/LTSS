@@ -399,7 +399,7 @@ namespace Game.Core.Application.Session
                 ? _currentRunInfo.CurrentPeriodNumber
                 : _currentRuntime.Bootstrap.Run.CurrentPeriodNumber;
             UpdateLocalRunProgress(completedPeriodNumber, RunLifecycleStatus.Completed);
-            _navigation.ShowSessionReady(reason ?? "run_completed");
+            _navigation.ShowResults(reason ?? "run_completed");
             _stateStore.SetState(state => state.With(
                 statusMessage: string.IsNullOrWhiteSpace(statusMessage)
                     ? "Все периоды завершены. Далее будет пост-экспериментальный этап."

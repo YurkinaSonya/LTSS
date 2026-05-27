@@ -176,6 +176,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         AddLayoutElement(titleColumn.gameObject, flexibleWidth: 1f);
         _periodTitleLabel = RuntimeUiFactory.CreateTitle(titleColumn, "Период", TextAnchor.MiddleLeft);
         _periodSubtitleLabel = RuntimeUiFactory.CreateCaption(titleColumn, string.Empty, TextAnchor.MiddleLeft);
+        _periodSubtitleLabel.gameObject.SetActive(false);
 
         var controls = CreateRow(header, "Controls", 10f, TextAnchor.MiddleRight);
         AddLayoutElement(controls.gameObject, preferredWidth: 260f);
@@ -267,19 +268,10 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
             ? meta.Title
             : $"Период {meta.PeriodNumber}";
 
-        var subtitle = $"Период {meta.PeriodNumber}";
-
-        if (!string.IsNullOrWhiteSpace(meta.HistoricalLabel))
-        {
-            subtitle += $"  |  {meta.HistoricalLabel}";
-        }
-
-        if (!string.IsNullOrWhiteSpace(meta.Phase))
-        {
-            subtitle += $"  |  {meta.Phase}";
-        }
-
-        _periodSubtitleLabel.text = subtitle;
+        _periodSubtitleLabel.text = !string.IsNullOrWhiteSpace(meta.Phase)
+            ? meta.Phase
+            : string.Empty;
+        _periodSubtitleLabel.gameObject.SetActive(!string.IsNullOrWhiteSpace(_periodSubtitleLabel.text));
         _phaseLabel.text = !string.IsNullOrWhiteSpace(meta.Phase)
             ? $"{meta.Phase} / {FormatFlow(runtimeState.FlowState)}"
             : FormatFlow(runtimeState.FlowState);
@@ -610,9 +602,10 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
             var requiredBadgeFitter = requiredBadge.gameObject.AddComponent<ContentSizeFitter>();
             requiredBadgeFitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
             requiredBadgeFitter.verticalFit = ContentSizeFitter.FitMode.Unconstrained;
-            var requiredLabel = RuntimeUiFactory.CreateCaption(requiredBadge, string.Empty, TextAnchor.MiddleCenter);
+            var requiredLabel = RuntimeUiFactory.CreateBodyText(requiredBadge, string.Empty, TextAnchor.MiddleCenter);
             requiredLabel.fontSize = 12;
             requiredLabel.color = RuntimeUiFactory.PrimaryColor;
+            RuntimeUiFactory.ApplyTextStyle(requiredLabel, FontStyle.Bold);
             requiredBadge.gameObject.SetActive(false);
 
             var applyRequiredAmountButton = RuntimeUiFactory.CreateSecondaryButton(row, "=", 42f);
@@ -894,6 +887,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         _emptyStateLabel.text = message ?? string.Empty;
         _periodTitleLabel.text = "Период";
         _periodSubtitleLabel.text = string.Empty;
+        _periodSubtitleLabel.gameObject.SetActive(false);
         _phaseLabel.text = string.Empty;
         _statusTextLabel.text = string.Empty;
         _validationLabel.text = string.Empty;
