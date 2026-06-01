@@ -527,6 +527,7 @@ public static class RuntimeUiFactory
         if (label != null)
         {
             label.text = text ?? string.Empty;
+            label.color = ResolveButtonTextColor(button, label.color);
         }
     }
 
@@ -591,8 +592,30 @@ public static class RuntimeUiFactory
         label.horizontalOverflow = HorizontalWrapMode.Overflow;
         label.verticalOverflow = VerticalWrapMode.Overflow;
         label.raycastTarget = false;
+        label.color = ResolveButtonTextColor(button, textColor);
 
         return button;
+    }
+
+    private static Color ResolveButtonTextColor(Button button, Color fallback)
+    {
+        if (button == null)
+        {
+            return fallback;
+        }
+
+        var image = button.targetGraphic as Image;
+
+        if (image == null)
+        {
+            return fallback;
+        }
+
+        var background = image.color;
+        var luminance = 0.2126f * background.r + 0.7152f * background.g + 0.0722f * background.b;
+        return luminance <= 0.68f
+            ? Color.white
+            : TextPrimaryColor;
     }
 
     private static Text CreateText(

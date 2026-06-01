@@ -18,6 +18,7 @@ public sealed class InterPeriodBlockPopup : Popup
     private Text _subtitleLabel;
     private RectTransform _cardRect;
     private RectTransform _scrollContent;
+    private int _bodyFontSize;
     private Text _emptyLabel;
     private Button _primaryButton;
     private LayoutElement _scrollAreaLayoutElement;
@@ -227,16 +228,35 @@ public sealed class InterPeriodBlockPopup : Popup
             _scrollAreaLayoutElement.minHeight = 240f;
             _viewportLayoutElement.minHeight = 240f;
             _titleLabel.fontSize = 34;
+            _bodyFontSize = 19;
             return;
         }
 
-        var useLargeLayout = normalizedType == "news" || normalizedBody.Length > 520;
-        _cardRect.sizeDelta = useLargeLayout
-            ? new Vector2(1120f, 840f)
-            : new Vector2(980f, 720f);
-        _scrollAreaLayoutElement.minHeight = useLargeLayout ? 620f : 460f;
-        _viewportLayoutElement.minHeight = useLargeLayout ? 620f : 460f;
+        if (normalizedType == "news" || normalizedBody.Length > 520)
+        {
+            _cardRect.sizeDelta = new Vector2(1120f, 840f);
+            _scrollAreaLayoutElement.minHeight = 620f;
+            _viewportLayoutElement.minHeight = 620f;
+            _titleLabel.fontSize = 31;
+            _bodyFontSize = 17;
+            return;
+        }
+
+        if (normalizedBody.Length <= 220)
+        {
+            _cardRect.sizeDelta = new Vector2(760f, 500f);
+            _scrollAreaLayoutElement.minHeight = 220f;
+            _viewportLayoutElement.minHeight = 220f;
+            _titleLabel.fontSize = 32;
+            _bodyFontSize = 21;
+            return;
+        }
+
+        _cardRect.sizeDelta = new Vector2(900f, 620f);
+        _scrollAreaLayoutElement.minHeight = 320f;
+        _viewportLayoutElement.minHeight = 320f;
         _titleLabel.fontSize = 31;
+        _bodyFontSize = 19;
     }
 
     private void BuildInstructionLayout(InterPeriodBlockRuntime block)
@@ -258,6 +278,7 @@ public sealed class InterPeriodBlockPopup : Popup
             RuntimeUiFactory.SurfaceColor);
 
         var text = RuntimeUiFactory.CreateBodyText(panel, body, TextAnchor.UpperLeft);
+        text.fontSize = _bodyFontSize > 0 ? _bodyFontSize : 18;
         text.horizontalOverflow = HorizontalWrapMode.Wrap;
         text.verticalOverflow = VerticalWrapMode.Overflow;
         text.supportRichText = false;

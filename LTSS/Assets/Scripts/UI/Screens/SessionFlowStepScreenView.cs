@@ -33,9 +33,13 @@ public sealed class SessionFlowStepScreenView : ScreenView
     private Text _subtitleLabel;
     private Text _bodyLabel;
     private Text _statusLabel;
+    private RectTransform _cardRect;
     private RectTransform _bodyPanel;
+    private LayoutElement _bodyPanelLayout;
     private ScrollRect _bodyScrollRect;
     private RectTransform _bodyContainer;
+    private LayoutElement _bodyScrollAreaLayoutElement;
+    private LayoutElement _bodyViewportLayoutElement;
     private RectTransform _questionPanel;
     private ScrollRect _questionScrollRect;
     private RectTransform _questionContainer;
@@ -99,6 +103,7 @@ public sealed class SessionFlowStepScreenView : ScreenView
         _subtitleLabel.gameObject.SetActive(!isSurvey && !string.IsNullOrWhiteSpace(_subtitleLabel.text));
         _bodyLabel.text = SimpleMarkdownFormatter.Format(viewModel.Body);
         var hasBody = !string.IsNullOrWhiteSpace(_bodyLabel.text);
+        ApplyStepLayoutPreset(isSurvey, hasBody);
         _bodyLabel.gameObject.SetActive(!isSurvey && hasBody);
         if (_bodyPanel != null)
         {
@@ -176,10 +181,10 @@ public sealed class SessionFlowStepScreenView : ScreenView
         _isBuilt = true;
 
         var background = RuntimeUiFactory.CreateScreenBackground(transform);
-        var card = RuntimeUiFactory.CreateCard("FlowCard", background, new Vector2(1120f, 820f));
+        _cardRect = RuntimeUiFactory.CreateCard("FlowCard", background, new Vector2(1120f, 820f));
         var content = RuntimeUiFactory.CreateContentRoot(
             "Content",
-            card,
+            _cardRect,
             new RectOffset(26, 26, 24, 22),
             14f);
 
@@ -194,25 +199,25 @@ public sealed class SessionFlowStepScreenView : ScreenView
             10f,
             RuntimeUiFactory.SurfaceColor);
         DisableContentSizeFitter(_bodyPanel);
-        var bodyPanelLayout = _bodyPanel.gameObject.AddComponent<LayoutElement>();
-        bodyPanelLayout.minHeight = 420f;
-        bodyPanelLayout.preferredHeight = 560f;
-        bodyPanelLayout.flexibleHeight = 1f;
+        _bodyPanelLayout = _bodyPanel.gameObject.AddComponent<LayoutElement>();
+        _bodyPanelLayout.minHeight = 420f;
+        _bodyPanelLayout.preferredHeight = 560f;
+        _bodyPanelLayout.flexibleHeight = 1f;
 
         var bodyScrollArea = RuntimeUiFactory.CreateRow("BodyScrollArea", _bodyPanel, 8f, TextAnchor.UpperLeft);
         var bodyScrollAreaLayout = bodyScrollArea.GetComponent<HorizontalLayoutGroup>();
         bodyScrollAreaLayout.childForceExpandWidth = false;
         bodyScrollAreaLayout.childForceExpandHeight = true;
         bodyScrollAreaLayout.childControlHeight = true;
-        var bodyScrollAreaElement = bodyScrollArea.gameObject.AddComponent<LayoutElement>();
-        bodyScrollAreaElement.flexibleHeight = 1f;
-        bodyScrollAreaElement.minHeight = 390f;
+        _bodyScrollAreaLayoutElement = bodyScrollArea.gameObject.AddComponent<LayoutElement>();
+        _bodyScrollAreaLayoutElement.flexibleHeight = 1f;
+        _bodyScrollAreaLayoutElement.minHeight = 390f;
 
         var bodyViewport = CreateRect("BodyViewport", bodyScrollArea);
-        var bodyViewportLayout = bodyViewport.gameObject.AddComponent<LayoutElement>();
-        bodyViewportLayout.flexibleWidth = 1f;
-        bodyViewportLayout.flexibleHeight = 1f;
-        bodyViewportLayout.minHeight = 390f;
+        _bodyViewportLayoutElement = bodyViewport.gameObject.AddComponent<LayoutElement>();
+        _bodyViewportLayoutElement.flexibleWidth = 1f;
+        _bodyViewportLayoutElement.flexibleHeight = 1f;
+        _bodyViewportLayoutElement.minHeight = 390f;
         var bodyViewportImage = bodyViewport.gameObject.AddComponent<Image>();
         bodyViewportImage.color = Color.white;
         var bodyViewportMask = bodyViewport.gameObject.AddComponent<Mask>();
@@ -1152,6 +1157,73 @@ public sealed class SessionFlowStepScreenView : ScreenView
         }
 
         return false;
+    }
+
+    private void ApplyStepLayoutPreset(bool isSurvey, bool hasBody)
+    {
+        if (_cardRect == null
+            || _bodyPanelLayout == null
+            || _bodyScrollAreaLayoutElement == null
+            || _bodyViewportLayoutElement == null
+            || _bodyLabel == null)
+        {
+            return;
+        }
+
+        if (isSurvey)
+        {
+            _cardRect.sizeDelta = new Vector2(1120f, 820f);
+            _bodyPanelLayout.minHeight = 420f;
+            _bodyPanelLayout.preferredHeight = 560f;
+            _bodyScrollAreaLayoutElement.minHeight = 390f;
+            _bodyViewportLayoutElement.minHeight = 390f;
+            _bodyLabel.fontSize = 17;
+            return;
+        }
+
+        if (!hasBody)
+        {
+            _cardRect.sizeDelta = new Vector2(780f, 360f);
+            _bodyPanelLayout.minHeight = 180f;
+            _bodyPanelLayout.preferredHeight = 180f;
+            _bodyScrollAreaLayoutElement.minHeight = 140f;
+            _bodyViewportLayoutElement.minHeight = 140f;
+            _bodyLabel.fontSize = 18;
+            return;
+        }
+
+        var bodyLength = _bodyLabel.text != null
+            ? _bodyLabel.text.Length
+            : 0;
+
+        if (bodyLength <= 260)
+        {
+            _cardRect.sizeDelta = new Vector2(820f, 500f);
+            _bodyPanelLayout.minHeight = 220f;
+            _bodyPanelLayout.preferredHeight = 240f;
+            _bodyScrollAreaLayoutElement.minHeight = 180f;
+            _bodyViewportLayoutElement.minHeight = 180f;
+            _bodyLabel.fontSize = 21;
+            return;
+        }
+
+        if (bodyLength <= 760)
+        {
+            _cardRect.sizeDelta = new Vector2(940f, 620f);
+            _bodyPanelLayout.minHeight = 320f;
+            _bodyPanelLayout.preferredHeight = 360f;
+            _bodyScrollAreaLayoutElement.minHeight = 280f;
+            _bodyViewportLayoutElement.minHeight = 280f;
+            _bodyLabel.fontSize = 19;
+            return;
+        }
+
+        _cardRect.sizeDelta = new Vector2(1120f, 820f);
+        _bodyPanelLayout.minHeight = 420f;
+        _bodyPanelLayout.preferredHeight = 560f;
+        _bodyScrollAreaLayoutElement.minHeight = 390f;
+        _bodyViewportLayoutElement.minHeight = 390f;
+        _bodyLabel.fontSize = 17;
     }
 
     private void OnSurveyAnswerChanged()
