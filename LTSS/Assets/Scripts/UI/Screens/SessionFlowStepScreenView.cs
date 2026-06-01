@@ -473,7 +473,19 @@ public sealed class SessionFlowStepScreenView : ScreenView
             string.IsNullOrWhiteSpace(question.Placeholder)
                 ? "Введите ответ"
                 : question.Placeholder);
+        if (IsAgeQuestion(question))
+        {
+            binding.TextInput.contentType = InputField.ContentType.IntegerNumber;
+            binding.TextInput.lineType = InputField.LineType.SingleLine;
+        }
+
         binding.TextInput.onValueChanged.AddListener(_ => OnSurveyAnswerChanged());
+    }
+
+    private static bool IsAgeQuestion(SessionFlowQuestionRuntime question)
+    {
+        return question != null
+               && string.Equals((question.Label ?? string.Empty).Trim(), "Возраст", StringComparison.OrdinalIgnoreCase);
     }
 
     private void BuildChoiceOptions(
