@@ -168,7 +168,27 @@ public sealed class SessionFlowStepScreenView : ScreenView
     public bool TryPrepareSurveySubmission()
     {
         var answers = CollectAnswers();
-        return !HasMissingRequiredAnswers(answers);
+
+        if (HasMissingRequiredAnswers(answers))
+        {
+            return false;
+        }
+
+        if (!IsInstructionQuizActive())
+        {
+            return true;
+        }
+
+        var incorrectAnswersCount = CountIncorrectInstructionQuizAnswers();
+
+        if (incorrectAnswersCount <= 0)
+        {
+            return true;
+        }
+
+        OpenInstructionReferencePopup(
+            $"Вы ответили неправильно на {incorrectAnswersCount} {GetQuestionCountWordForm(incorrectAnswersCount)} теста. Перечитайте инструкцию и проверьте ответы еще раз.");
+        return false;
     }
 
     private void EnsureBuilt()
@@ -1242,6 +1262,14 @@ public sealed class SessionFlowStepScreenView : ScreenView
     {
         RefreshOtherInputs(binding);
 
+        if (IsInstructionQuizActive())
+        {
+            ResetOptionFeedback(binding);
+            SetQuestionFeedback(binding, string.Empty, true);
+            OnSurveyAnswerChanged();
+            return;
+        }
+
         if (binding != null
             && binding.Question != null
             && binding.Question.IsCheckableChoiceQuestion)
@@ -1250,6 +1278,30 @@ public sealed class SessionFlowStepScreenView : ScreenView
         }
 
         OnSurveyAnswerChanged();
+    }
+
+    private int CountIncorrectInstructionQuizAnswers()
+    {
+        var incorrectAnswersCount = 0;
+
+        foreach (var pair in _questionBindings)
+        {
+            var binding = pair.Value;
+
+            if (binding == null
+                || binding.Question == null
+                || !binding.Question.IsCheckableChoiceQuestion)
+            {
+                continue;
+            }
+
+            if (!IsCheckableQuestionAnsweredCorrectly(binding))
+            {
+                incorrectAnswersCount++;
+            }
+        }
+
+        return incorrectAnswersCount;
     }
 
     private void UpdatePrimaryButtonInteractable(SessionFlowStepViewModel viewModel)
@@ -1266,6 +1318,33 @@ public sealed class SessionFlowStepScreenView : ScreenView
         }
 
         _primaryButton.interactable = !HasMissingRequiredAnswers(CollectAnswers());
+    }
+
+    private static bool IsCheckableQuestionAnsweredCorrectly(QuestionBinding binding)
+    {
+        if (binding == null || binding.Question == null || binding.Options == null)
+        {
+            return true;
+        }
+
+        var selectedOptionIds = CollectSelectedOptionIds(binding);
+        var correctOptionIds = new List<string>();
+
+        for (var index = 0; index < binding.Options.Count; index++)
+        {
+            var option = binding.Options[index];
+
+            if (option != null && option.Option != null && option.Option.IsCorrect)
+            {
+                correctOptionIds.Add(ResolveOptionValue(option.Option));
+            }
+        }
+
+        return binding.Question.Type == SessionFlowQuestionType.MultipleChoice
+            ? AreExactSetsEqual(selectedOptionIds, correctOptionIds)
+            : selectedOptionIds.Count == 1
+              && correctOptionIds.Count == 1
+              && string.Equals(selectedOptionIds[0], correctOptionIds[0], StringComparison.Ordinal);
     }
 
     private void EvaluateCheckableQuestion(QuestionBinding binding)
@@ -1411,6 +1490,28 @@ public sealed class SessionFlowStepScreenView : ScreenView
             option.Label.color = RuntimeUiFactory.TextPrimaryColor;
             option.Label.supportRichText = false;
             option.Label.text = option.Option.Label;
+        }
+    }
+
+    private static string GetQuestionCountWordForm(int count)
+    {
+        var mod100 = count % 100;
+
+        if (mod100 >= 11 && mod100 <= 14)
+        {
+            return "вопросов";
+        }
+
+        switch (count % 10)
+        {
+            case 1:
+                return "вопрос";
+            case 2:
+            case 3:
+            case 4:
+                return "вопроса";
+            default:
+                return "вопросов";
         }
     }
 
