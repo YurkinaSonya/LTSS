@@ -16,9 +16,12 @@ public sealed class InterPeriodBlockPopup : Popup
 
     private Text _titleLabel;
     private Text _subtitleLabel;
+    private RectTransform _cardRect;
     private RectTransform _scrollContent;
     private Text _emptyLabel;
     private Button _primaryButton;
+    private LayoutElement _scrollAreaLayoutElement;
+    private LayoutElement _viewportLayoutElement;
     private InterPeriodBlockRuntime _activeBlock;
     private bool _isFiredFlow;
     private bool _isFiredResolved;
@@ -59,11 +62,11 @@ public sealed class InterPeriodBlockPopup : Popup
         var backgroundImage = background.gameObject.AddComponent<Image>();
         backgroundImage.color = new Color(0.11f, 0.13f, 0.2f, 0.62f);
 
-        var card = RuntimeUiFactory.CreateCard("InterPeriodCard", transform, new Vector2(940f, 760f), false);
+        _cardRect = RuntimeUiFactory.CreateCard("InterPeriodCard", transform, new Vector2(980f, 760f), false);
         var content = RuntimeUiFactory.CreateContentRoot(
             "Content",
-            card,
-            new RectOffset(28, 28, 24, 24),
+            _cardRect,
+            new RectOffset(24, 24, 20, 20),
             12f);
 
         _titleLabel = RuntimeUiFactory.CreateTitle(content, "Сообщение периода", TextAnchor.MiddleLeft);
@@ -74,15 +77,15 @@ public sealed class InterPeriodBlockPopup : Popup
         var scrollAreaLayout = scrollArea.GetComponent<HorizontalLayoutGroup>();
         scrollAreaLayout.childForceExpandWidth = false;
         scrollAreaLayout.childForceExpandHeight = true;
-        var scrollAreaElement = scrollArea.gameObject.AddComponent<LayoutElement>();
-        scrollAreaElement.flexibleHeight = 1f;
-        scrollAreaElement.minHeight = 520f;
+        _scrollAreaLayoutElement = scrollArea.gameObject.AddComponent<LayoutElement>();
+        _scrollAreaLayoutElement.flexibleHeight = 1f;
+        _scrollAreaLayoutElement.minHeight = 520f;
 
         var viewport = CreateRect("Viewport", scrollArea);
-        var viewportLayout = viewport.gameObject.AddComponent<LayoutElement>();
-        viewportLayout.flexibleWidth = 1f;
-        viewportLayout.flexibleHeight = 1f;
-        viewportLayout.minHeight = 520f;
+        _viewportLayoutElement = viewport.gameObject.AddComponent<LayoutElement>();
+        _viewportLayoutElement.flexibleWidth = 1f;
+        _viewportLayoutElement.flexibleHeight = 1f;
+        _viewportLayoutElement.minHeight = 520f;
         var viewportImage = viewport.gameObject.AddComponent<Image>();
         viewportImage.color = Color.white;
         var viewportMask = viewport.gameObject.AddComponent<Mask>();
@@ -187,6 +190,7 @@ public sealed class InterPeriodBlockPopup : Popup
         _titleLabel.text = ResolveBlockTitle(block);
         _subtitleLabel.text = string.Empty;
         _subtitleLabel.gameObject.SetActive(false);
+        ApplyLayoutPreset(normalizedType, ResolveBody(block));
         RuntimeUiFactory.SetButtonText(
             _primaryButton,
             normalizedType == "news"
@@ -208,6 +212,33 @@ public sealed class InterPeriodBlockPopup : Popup
         BuildInstructionLayout(block);
     }
 
+    private void ApplyLayoutPreset(string normalizedType, string body)
+    {
+        if (_cardRect == null || _scrollAreaLayoutElement == null || _viewportLayoutElement == null)
+        {
+            return;
+        }
+
+        var normalizedBody = body ?? string.Empty;
+
+        if (normalizedType == "fired")
+        {
+            _cardRect.sizeDelta = new Vector2(760f, 560f);
+            _scrollAreaLayoutElement.minHeight = 240f;
+            _viewportLayoutElement.minHeight = 240f;
+            _titleLabel.fontSize = 34;
+            return;
+        }
+
+        var useLargeLayout = normalizedType == "news" || normalizedBody.Length > 520;
+        _cardRect.sizeDelta = useLargeLayout
+            ? new Vector2(1120f, 840f)
+            : new Vector2(980f, 720f);
+        _scrollAreaLayoutElement.minHeight = useLargeLayout ? 620f : 460f;
+        _viewportLayoutElement.minHeight = useLargeLayout ? 620f : 460f;
+        _titleLabel.fontSize = 31;
+    }
+
     private void BuildInstructionLayout(InterPeriodBlockRuntime block)
     {
         var body = ResolveBody(block);
@@ -222,7 +253,7 @@ public sealed class InterPeriodBlockPopup : Popup
         var panel = RuntimeUiFactory.CreatePanel(
             "InstructionPanel",
             _scrollContent,
-            new RectOffset(22, 22, 20, 20),
+            new RectOffset(16, 16, 16, 16),
             12f,
             RuntimeUiFactory.SurfaceColor);
 
@@ -237,7 +268,7 @@ public sealed class InterPeriodBlockPopup : Popup
         var masthead = RuntimeUiFactory.CreatePanel(
             "Masthead",
             _scrollContent,
-            new RectOffset(20, 20, 16, 16),
+            new RectOffset(16, 16, 14, 14),
             6f,
             new Color(0.95f, 0.93f, 0.86f, 1f));
         var mastheadTitle = RuntimeUiFactory.CreateTitle(masthead, _titleLabel.text, TextAnchor.MiddleCenter);
@@ -259,7 +290,7 @@ public sealed class InterPeriodBlockPopup : Popup
             var articlePanel = RuntimeUiFactory.CreatePanel(
                 $"NewsArticle_{index + 1}",
                 _scrollContent,
-                new RectOffset(18, 18, 16, 16),
+                new RectOffset(14, 14, 14, 14),
                 10f,
                 new Color(0.97f, 0.95f, 0.89f, 1f));
 
@@ -292,7 +323,7 @@ public sealed class InterPeriodBlockPopup : Popup
         var introPanel = RuntimeUiFactory.CreatePanel(
             "FiredIntroPanel",
             _scrollContent,
-            new RectOffset(22, 22, 20, 20),
+            new RectOffset(16, 16, 16, 16),
             12f,
             RuntimeUiFactory.SurfaceColor);
         var introText = RuntimeUiFactory.CreateBodyText(
@@ -307,11 +338,12 @@ public sealed class InterPeriodBlockPopup : Popup
         var inputPanel = RuntimeUiFactory.CreatePanel(
             "FiredInputPanel",
             _scrollContent,
-            new RectOffset(22, 22, 20, 20),
+            new RectOffset(16, 16, 16, 16),
             10f,
             RuntimeUiFactory.SurfaceColor);
         _firedPromptLabel = RuntimeUiFactory.CreateBodyText(inputPanel, "Введите число от 1 до 30", TextAnchor.UpperLeft);
         RuntimeUiFactory.ApplyTextStyle(_firedPromptLabel, FontStyle.Bold);
+        _firedPromptLabel.fontSize = 20;
         _firedInput = RuntimeUiFactory.CreateInputField(inputPanel, "От 1 до 30");
         _firedInput.contentType = InputField.ContentType.IntegerNumber;
         _firedInput.lineType = InputField.LineType.SingleLine;
@@ -319,12 +351,15 @@ public sealed class InterPeriodBlockPopup : Popup
         var resultPanel = RuntimeUiFactory.CreatePanel(
             "FiredResultPanel",
             _scrollContent,
-            new RectOffset(22, 22, 20, 20),
+            new RectOffset(16, 16, 16, 16),
             10f,
-            RuntimeUiFactory.SurfaceColor);
+        RuntimeUiFactory.SurfaceColor);
         _firedSystemNumberLabel = RuntimeUiFactory.CreateBodyText(resultPanel, string.Empty, TextAnchor.UpperLeft);
+        _firedSystemNumberLabel.fontSize = 20;
+        RuntimeUiFactory.ApplyTextStyle(_firedSystemNumberLabel, FontStyle.Bold);
         _firedSystemNumberLabel.gameObject.SetActive(false);
         _firedResultLabel = RuntimeUiFactory.CreateBodyText(resultPanel, string.Empty, TextAnchor.UpperLeft);
+        _firedResultLabel.fontSize = 20;
         _firedResultLabel.horizontalOverflow = HorizontalWrapMode.Wrap;
         _firedResultLabel.verticalOverflow = VerticalWrapMode.Overflow;
         _firedResultLabel.gameObject.SetActive(false);

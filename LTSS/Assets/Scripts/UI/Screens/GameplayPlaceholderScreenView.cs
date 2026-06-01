@@ -49,7 +49,10 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
     private Text _statusTextLabel;
     private Text _emptyStateLabel;
     private Text _expenseHintLabel;
+    private Text _instructionPopupTitleLabel;
+    private Text _instructionPopupBodyLabel;
     private Button _backButton;
+    private Button _instructionButton;
     private Button _completeButton;
     private RectTransform _actionButtonsColumn;
     private RectTransform _consumerCreditRow;
@@ -65,13 +68,17 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
     private RectTransform _mainLayout;
     private RectTransform _footerRow;
     private ScrollRect _expenseScrollRect;
+    private ScrollRect _instructionPopupScrollRect;
     private Image _expenseTopFade;
     private Image _expenseBottomFade;
+    private RectTransform _instructionPopupOverlay;
     private readonly Dictionary<string, ExpenseRowWidgets> _expenseRows = new Dictionary<string, ExpenseRowWidgets>();
     private readonly Dictionary<string, AssetCardWidgets> _assetCards = new Dictionary<string, AssetCardWidgets>();
     private readonly Dictionary<string, InfoRowWidgets> _infoRows = new Dictionary<string, InfoRowWidgets>();
     private bool _hasDismissedExpenseScrollHint;
     private bool _isBuilt;
+    private string _instructionReferenceTitle = string.Empty;
+    private string _instructionReferenceBody = string.Empty;
     private static readonly Color UjePositiveColor = new Color32(84, 156, 110, 255);
 
     public override ScreenController Construct(UIContext context)
@@ -82,6 +89,8 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
 
     public void Render(
         PeriodRuntimeState runtimeState,
+        string instructionTitle,
+        string instructionBody,
         Action onBack,
         Action onComplete,
         Action<string, string> onExpenseAmountChanged,
@@ -94,12 +103,19 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         Action onPdsAction)
     {
         EnsureBuilt();
+        _instructionReferenceTitle = instructionTitle ?? string.Empty;
+        _instructionReferenceBody = instructionBody ?? string.Empty;
         BindButton(_backButton, onBack);
         BindButton(_completeButton, onComplete);
         BindButton(_consumerCreditButton, onConsumerCreditAction);
         BindButton(_apartmentButton, onApartmentPurchaseAction);
         BindButton(_mortgageButton, onMortgageAction);
         BindButton(_pdsButton, onPdsAction);
+        _instructionButton.gameObject.SetActive(!string.IsNullOrWhiteSpace(_instructionReferenceBody));
+        if (string.IsNullOrWhiteSpace(_instructionReferenceBody))
+        {
+            CloseInstructionReferencePopup();
+        }
 
         if (runtimeState == null || !runtimeState.HasDefinition)
         {
@@ -118,6 +134,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
             }
 
             SetEmptyState(fallbackMessage);
+            CloseInstructionReferencePopup();
             return;
         }
 
@@ -152,6 +169,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         BuildMetrics(content);
         BuildMain(content);
         BuildFooter(content);
+        BuildInstructionReferencePopup(background);
 
         _emptyStateLabel = RuntimeUiFactory.CreateBodyText(content, string.Empty, TextAnchor.MiddleCenter);
         _emptyStateLabel.color = RuntimeUiFactory.TextSecondaryColor;
@@ -179,10 +197,15 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         _periodSubtitleLabel.gameObject.SetActive(false);
 
         var controls = CreateRow(header, "Controls", 10f, TextAnchor.MiddleRight);
-        AddLayoutElement(controls.gameObject, preferredWidth: 260f);
+        AddLayoutElement(controls.gameObject, preferredWidth: 430f);
         _phaseLabel = RuntimeUiFactory.CreateCaption(controls, string.Empty, TextAnchor.MiddleCenter);
         AddLayoutElement(_phaseLabel.gameObject, preferredWidth: 120f);
+        _instructionButton = RuntimeUiFactory.CreateSecondaryButton(controls, "Инструкция", 46f);
+        AddLayoutElement(_instructionButton.gameObject, preferredWidth: 170f, minimumWidth: 170f, preferredHeight: 46f, flexibleWidth: 0f);
+        BindButton(_instructionButton, OpenInstructionReferencePopup);
+        _instructionButton.gameObject.SetActive(false);
         _backButton = RuntimeUiFactory.CreateSecondaryButton(controls, "Назад", 46f);
+        AddLayoutElement(_backButton.gameObject, preferredWidth: 120f, minimumWidth: 120f, preferredHeight: 46f, flexibleWidth: 0f);
     }
 
     private void BuildMetrics(Transform parent)
@@ -201,10 +224,10 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         AddLayoutElement(_mainLayout.gameObject, flexibleHeight: 1f);
 
         var leftColumn = CreateVerticalGroup(_mainLayout, "LeftColumn", 16f, TextAnchor.UpperLeft);
-        AddLayoutElement(leftColumn.gameObject, preferredWidth: 980f, flexibleWidth: 1.2f, flexibleHeight: 1f);
+        AddLayoutElement(leftColumn.gameObject, preferredWidth: 1040f, flexibleWidth: 1.3f, flexibleHeight: 1f);
 
         var rightColumn = CreateVerticalGroup(_mainLayout, "RightColumn", 16f, TextAnchor.UpperLeft);
-        AddLayoutElement(rightColumn.gameObject, preferredWidth: 420f, flexibleWidth: 0.8f, flexibleHeight: 1f);
+        AddLayoutElement(rightColumn.gameObject, preferredWidth: 400f, flexibleWidth: 0.7f, flexibleHeight: 1f);
 
         _expenseContent = CreateScrollableSection(leftColumn, "Расходы", out _expenseScrollRect);
         AddLayoutElement(_expenseContent.parent.gameObject, flexibleHeight: 1f);
@@ -259,6 +282,124 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         AddLayoutElement(_validationLabel.gameObject, flexibleWidth: 1f, preferredWidth: 900f);
         _completeButton = RuntimeUiFactory.CreatePrimaryButton(_footerRow, "Завершить период", 52f);
         AddLayoutElement(_completeButton.gameObject, preferredWidth: 280f);
+    }
+
+    private void BuildInstructionReferencePopup(Transform parent)
+    {
+        _instructionPopupOverlay = CreateRect("InstructionReferenceOverlay", parent);
+        Stretch(_instructionPopupOverlay, 0f, 0f, 0f, 0f);
+        _instructionPopupOverlay.SetAsLastSibling();
+
+        var overlayImage = _instructionPopupOverlay.gameObject.AddComponent<Image>();
+        overlayImage.color = new Color(0.12f, 0.15f, 0.22f, 0.6f);
+
+        var overlayButton = _instructionPopupOverlay.gameObject.AddComponent<Button>();
+        overlayButton.transition = Selectable.Transition.None;
+        overlayButton.onClick.AddListener(CloseInstructionReferencePopup);
+
+        var card = RuntimeUiFactory.CreateCard("InstructionReferenceCard", _instructionPopupOverlay, new Vector2(1120f, 820f));
+        var content = RuntimeUiFactory.CreateContentRoot(
+            "InstructionReferenceContent",
+            card,
+            new RectOffset(22, 22, 20, 18),
+            12f);
+
+        var headerRow = RuntimeUiFactory.CreateRow("InstructionReferenceHeader", content, 12f, TextAnchor.MiddleCenter);
+        var headerLayout = headerRow.GetComponent<HorizontalLayoutGroup>();
+        headerLayout.childForceExpandWidth = false;
+        headerLayout.childControlWidth = true;
+
+        _instructionPopupTitleLabel = RuntimeUiFactory.CreateTitle(headerRow, "Инструкция", TextAnchor.MiddleLeft);
+        AddLayoutElement(_instructionPopupTitleLabel.gameObject, flexibleWidth: 1f);
+
+        var closeButton = RuntimeUiFactory.CreateSecondaryButton(headerRow, "Закрыть", 42f);
+        AddLayoutElement(closeButton.gameObject, preferredWidth: 140f, minimumWidth: 140f, preferredHeight: 42f, flexibleWidth: 0f);
+        closeButton.onClick.AddListener(CloseInstructionReferencePopup);
+
+        var bodyPanel = RuntimeUiFactory.CreatePanel(
+            "InstructionReferenceBodyPanel",
+            content,
+            new RectOffset(12, 12, 12, 12),
+            10f,
+            RuntimeUiFactory.SurfaceColor);
+        DisableContentSizeFitter(bodyPanel);
+        AddLayoutElement(bodyPanel.gameObject, flexibleHeight: 1f, minimumHeight: 600f);
+
+        var scrollArea = RuntimeUiFactory.CreateRow("InstructionReferenceScrollArea", bodyPanel, 8f, TextAnchor.UpperLeft);
+        var scrollAreaLayout = scrollArea.GetComponent<HorizontalLayoutGroup>();
+        scrollAreaLayout.childForceExpandWidth = false;
+        scrollAreaLayout.childForceExpandHeight = true;
+        scrollAreaLayout.childControlHeight = true;
+        AddLayoutElement(scrollArea.gameObject, flexibleHeight: 1f, minimumHeight: 560f);
+
+        var viewport = CreateRect("InstructionReferenceViewport", scrollArea);
+        AddLayoutElement(viewport.gameObject, flexibleWidth: 1f, flexibleHeight: 1f, minimumHeight: 560f);
+        var viewportImage = viewport.gameObject.AddComponent<Image>();
+        viewportImage.color = Color.white;
+        var viewportMask = viewport.gameObject.AddComponent<Mask>();
+        viewportMask.showMaskGraphic = false;
+
+        _instructionPopupScrollRect = bodyPanel.gameObject.AddComponent<ScrollRect>();
+        _instructionPopupScrollRect.viewport = viewport;
+        _instructionPopupScrollRect.horizontal = false;
+        _instructionPopupScrollRect.vertical = true;
+        _instructionPopupScrollRect.movementType = ScrollRect.MovementType.Clamped;
+        _instructionPopupScrollRect.scrollSensitivity = 24f;
+        var scrollbar = CreateVerticalScrollbar(scrollArea);
+        _instructionPopupScrollRect.verticalScrollbar = scrollbar;
+        _instructionPopupScrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
+
+        var bodyContent = RuntimeUiFactory.CreateContentRoot(
+            "InstructionReferenceBodyContent",
+            viewport,
+            new RectOffset(0, 0, 0, 0),
+            8f);
+        bodyContent.anchorMin = new Vector2(0f, 1f);
+        bodyContent.anchorMax = new Vector2(1f, 1f);
+        bodyContent.pivot = new Vector2(0.5f, 1f);
+        bodyContent.anchoredPosition = Vector2.zero;
+        bodyContent.sizeDelta = new Vector2(0f, 0f);
+        var contentFitter = bodyContent.gameObject.AddComponent<ContentSizeFitter>();
+        contentFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+        contentFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+        _instructionPopupScrollRect.content = bodyContent;
+
+        _instructionPopupBodyLabel = RuntimeUiFactory.CreateBodyText(bodyContent, string.Empty);
+        _instructionPopupBodyLabel.alignment = TextAnchor.UpperLeft;
+        _instructionPopupBodyLabel.supportRichText = true;
+        _instructionPopupBodyLabel.horizontalOverflow = HorizontalWrapMode.Wrap;
+        _instructionPopupBodyLabel.verticalOverflow = VerticalWrapMode.Overflow;
+
+        _instructionPopupOverlay.gameObject.SetActive(false);
+    }
+
+    private void OpenInstructionReferencePopup()
+    {
+        if (_instructionPopupOverlay == null || string.IsNullOrWhiteSpace(_instructionReferenceBody))
+        {
+            return;
+        }
+
+        _instructionPopupTitleLabel.text = string.IsNullOrWhiteSpace(_instructionReferenceTitle)
+            ? "Инструкция"
+            : _instructionReferenceTitle;
+        _instructionPopupBodyLabel.text = SimpleMarkdownFormatter.Format(_instructionReferenceBody);
+        _instructionPopupOverlay.gameObject.SetActive(true);
+        _instructionPopupOverlay.SetAsLastSibling();
+
+        if (_instructionPopupScrollRect != null)
+        {
+            Canvas.ForceUpdateCanvases();
+            _instructionPopupScrollRect.verticalNormalizedPosition = 1f;
+        }
+    }
+
+    private void CloseInstructionReferencePopup()
+    {
+        if (_instructionPopupOverlay != null)
+        {
+            _instructionPopupOverlay.gameObject.SetActive(false);
+        }
     }
 
     private void ApplyHeader(PeriodRuntimeState runtimeState)
@@ -733,71 +874,77 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
 
         if (ShouldUseScrollableAssetsLayout(assets))
         {
-            var primaryRow = CreateAssetsRow(_assetContent, "PrimaryAssetCards");
+            var scrollArea = CreateRow(_assetContent, "AssetScrollArea", 8f, TextAnchor.UpperLeft);
+            var scrollAreaLayout = scrollArea.GetComponent<HorizontalLayoutGroup>();
+            scrollAreaLayout.childForceExpandWidth = false;
+            scrollAreaLayout.childForceExpandHeight = true;
+            scrollAreaLayout.childControlHeight = true;
+            AddLayoutElement(scrollArea.gameObject, flexibleHeight: 1f, minimumHeight: 356f, preferredHeight: 356f);
 
-            for (var index = 0; index < assets.Count; index++)
-            {
-                var asset = assets[index];
-
-                if (asset == null || !IsPrimaryAsset(asset))
-                {
-                    continue;
-                }
-
-                CreateAssetCard(primaryRow, asset);
-            }
-
-            var overflowArea = CreateRow(_assetContent, "OverflowAssetScrollArea", 8f, TextAnchor.UpperLeft);
-            var overflowLayout = overflowArea.GetComponent<HorizontalLayoutGroup>();
-            overflowLayout.childForceExpandWidth = false;
-            overflowLayout.childForceExpandHeight = true;
-            overflowLayout.childControlHeight = true;
-            AddLayoutElement(overflowArea.gameObject, flexibleHeight: 1f, minimumHeight: 190f);
-
-            var viewport = CreateRect("OverflowAssetViewport", overflowArea);
-            AddLayoutElement(viewport.gameObject, flexibleWidth: 1f, flexibleHeight: 1f, minimumHeight: 190f);
+            var viewport = CreateRect("AssetViewport", scrollArea);
+            AddLayoutElement(viewport.gameObject, flexibleWidth: 1f, flexibleHeight: 1f, minimumHeight: 356f);
             var viewportImage = viewport.gameObject.AddComponent<Image>();
             viewportImage.color = Color.white;
             var viewportMask = viewport.gameObject.AddComponent<Mask>();
             viewportMask.showMaskGraphic = false;
 
-            var scrollRect = overflowArea.gameObject.AddComponent<ScrollRect>();
+            var scrollRect = scrollArea.gameObject.AddComponent<ScrollRect>();
             scrollRect.viewport = viewport;
             scrollRect.horizontal = false;
             scrollRect.vertical = true;
             scrollRect.movementType = ScrollRect.MovementType.Clamped;
             scrollRect.scrollSensitivity = 24f;
-            var verticalScrollbar = CreateVerticalScrollbar(overflowArea);
+            var verticalScrollbar = CreateVerticalScrollbar(scrollArea);
             scrollRect.verticalScrollbar = verticalScrollbar;
             scrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
 
-            var overflowContent = RuntimeUiFactory.CreateContentRoot(
-                "OverflowAssetContent",
+            var content = RuntimeUiFactory.CreateContentRoot(
+                "AssetContent",
                 viewport,
                 new RectOffset(0, 0, 0, 0),
-                10f);
-            overflowContent.anchorMin = new Vector2(0f, 1f);
-            overflowContent.anchorMax = new Vector2(1f, 1f);
-            overflowContent.pivot = new Vector2(0.5f, 1f);
-            overflowContent.anchoredPosition = Vector2.zero;
-            overflowContent.sizeDelta = new Vector2(0f, 0f);
-            var fitter = overflowContent.gameObject.AddComponent<ContentSizeFitter>();
+                14f);
+            content.anchorMin = new Vector2(0f, 1f);
+            content.anchorMax = new Vector2(1f, 1f);
+            content.pivot = new Vector2(0.5f, 1f);
+            content.anchoredPosition = Vector2.zero;
+            content.sizeDelta = new Vector2(0f, 0f);
+            var fitter = content.gameObject.AddComponent<ContentSizeFitter>();
             fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
             fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-            scrollRect.content = overflowContent;
+            scrollRect.content = content;
 
-            var overflowRow = CreateAssetsRow(overflowContent, "OverflowAssetCards");
+            RectTransform currentRow = null;
+            var cardsInRow = 0;
+            var rowIndex = 0;
 
             for (var index = 0; index < assets.Count; index++)
             {
                 var asset = assets[index];
 
-                if (asset == null || IsPrimaryAsset(asset))
+                if (asset == null)
                 {
                     continue;
                 }
 
-                CreateAssetCard(overflowRow, asset);
+                if (currentRow == null || cardsInRow >= 2)
+                {
+                    if (currentRow != null && cardsInRow == 1)
+                    {
+                        RuntimeUiFactory.AddFlexibleSpacer(currentRow);
+                    }
+
+                    currentRow = CreateAssetsRow(content, $"AssetCardsRow_{rowIndex}");
+                    rowIndex++;
+                    cardsInRow = 0;
+                }
+
+                CreateAssetCard(currentRow, asset);
+                cardsInRow++;
+            }
+
+            if (currentRow != null && cardsInRow == 1)
+            {
+                RuntimeUiFactory.AddFlexibleSpacer(currentRow);
             }
         }
         else
@@ -834,7 +981,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
     private void CreateAssetCard(Transform parent, PeriodAssetBalance asset)
     {
         var card = RuntimeUiFactory.CreateSurface($"Asset_{asset.AssetId}", parent, RuntimeUiFactory.ElevatedSurfaceColor);
-        AddLayoutElement(card.gameObject, preferredWidth: 0f, preferredHeight: 166f, flexibleWidth: 1f);
+        AddLayoutElement(card.gameObject, minimumWidth: 300f, preferredWidth: 300f, preferredHeight: 166f, flexibleWidth: 1f);
 
         var layout = card.gameObject.AddComponent<VerticalLayoutGroup>();
         layout.padding = new RectOffset(16, 16, 16, 16);
@@ -854,6 +1001,9 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         var depositButton = RuntimeUiFactory.CreatePrimaryButton(actions, "Пополнить", 42f);
         var withdrawButton = RuntimeUiFactory.CreateSecondaryButton(actions, "Снять", 42f);
 
+        AddLayoutElement(depositButton.gameObject, minimumWidth: 126f, preferredWidth: 136f, preferredHeight: 42f, flexibleWidth: 1f);
+        AddLayoutElement(withdrawButton.gameObject, minimumWidth: 126f, preferredWidth: 136f, preferredHeight: 42f, flexibleWidth: 1f);
+
         _assetCards[asset.AssetId] = new AssetCardWidgets
         {
             AssetId = asset.AssetId,
@@ -869,14 +1019,6 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
     {
         return assets != null && assets.Count > 3;
     }
-
-    private static bool IsPrimaryAsset(PeriodAssetBalance asset)
-    {
-        return asset != null
-               && (asset.AssetType == PeriodAssetType.Cash
-                   || asset.AssetType == PeriodAssetType.Deposit);
-    }
-
     private void SetEmptyState(string message)
     {
         _mainLayout.gameObject.SetActive(false);
@@ -1313,6 +1455,19 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         return gameObject.GetComponent<RectTransform>();
     }
 
+    private static void Stretch(RectTransform rect, float left, float right, float top, float bottom)
+    {
+        if (rect == null)
+        {
+            return;
+        }
+
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.offsetMin = new Vector2(left, bottom);
+        rect.offsetMax = new Vector2(-right, -top);
+    }
+
     private static void AddLayoutElement(
         GameObject target,
         float minimumWidth = -1f,
@@ -1365,6 +1520,21 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         for (var index = parent.childCount - 1; index >= 0; index--)
         {
             Destroy(parent.GetChild(index).gameObject);
+        }
+    }
+
+    private static void DisableContentSizeFitter(RectTransform rect)
+    {
+        if (rect == null)
+        {
+            return;
+        }
+
+        var fitter = rect.GetComponent<ContentSizeFitter>();
+
+        if (fitter != null)
+        {
+            fitter.enabled = false;
         }
     }
 

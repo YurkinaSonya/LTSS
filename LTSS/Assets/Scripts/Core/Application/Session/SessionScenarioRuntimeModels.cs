@@ -922,7 +922,8 @@ namespace Game.Core.Application.Session
             get
             {
                 if (Type != SessionFlowQuestionType.SingleChoice
-                    && Type != SessionFlowQuestionType.MultipleChoice)
+                    && Type != SessionFlowQuestionType.MultipleChoice
+                    && Type != SessionFlowQuestionType.Scale)
                 {
                     return false;
                 }

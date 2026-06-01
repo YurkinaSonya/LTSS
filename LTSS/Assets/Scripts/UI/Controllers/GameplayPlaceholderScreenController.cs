@@ -1,4 +1,5 @@
 using Game.Core.Application.Periods;
+using Game.Core.Application.Session;
 using Game.Core.Application.UI;
 using Game.Domain.GameFlow;
 
@@ -42,6 +43,8 @@ public sealed class GameplayPlaceholderScreenController : ScreenController
 
         _view?.Render(
             latestState ?? PeriodRuntimeState.Empty,
+            ResolveInstructionTitle(),
+            ResolveInstructionBody(),
             OnBack,
             OnComplete,
             OnExpenseAmountChanged,
@@ -52,6 +55,80 @@ public sealed class GameplayPlaceholderScreenController : ScreenController
             OnApartmentPurchaseAction,
             OnMortgageAction,
             OnPdsAction);
+    }
+
+    private string ResolveInstructionTitle()
+    {
+        var step = ResolveInstructionStep();
+        return step != null && !string.IsNullOrWhiteSpace(step.Title)
+            ? step.Title
+            : "Инструкция";
+    }
+
+    private string ResolveInstructionBody()
+    {
+        var step = ResolveInstructionStep();
+        return step != null
+            ? step.Body ?? string.Empty
+            : string.Empty;
+    }
+
+    private FlowStepRuntime ResolveInstructionStep()
+    {
+        var flowState = Context.SessionFlow != null
+            ? Context.SessionFlow.Current
+            : SessionFlowRuntimeState.Empty;
+        var config = flowState != null
+            ? flowState.Config
+            : SessionConfigRuntime.Empty;
+        var steps = config != null && config.PreSessionFlow != null
+            ? config.PreSessionFlow.Steps
+            : null;
+
+        if (steps == null)
+        {
+            return null;
+        }
+
+        for (var index = steps.Count - 1; index >= 0; index--)
+        {
+            var step = steps[index];
+
+            if (step != null
+                && step.Type == SessionFlowStepType.Instruction
+                && !string.IsNullOrWhiteSpace(step.Body))
+            {
+                return step;
+            }
+        }
+
+        for (var index = steps.Count - 1; index >= 0; index--)
+        {
+            var step = steps[index];
+
+            if (step != null
+                && !string.IsNullOrWhiteSpace(step.Body)
+                && !IsSurveyStepType(step.Type))
+            {
+                return step;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsSurveyStepType(SessionFlowStepType type)
+    {
+        switch (type)
+        {
+            case SessionFlowStepType.InstructionQuiz:
+            case SessionFlowStepType.PreTest:
+            case SessionFlowStepType.PostTest:
+            case SessionFlowStepType.PostPeriodSurvey:
+                return true;
+            default:
+                return false;
+        }
     }
 
     private void OnBack()

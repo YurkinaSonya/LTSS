@@ -48,11 +48,11 @@ public sealed class SessionFlowStepScreenView : ScreenView
     private Button _instructionReferenceButton;
     private RectTransform _instructionPopupOverlay;
     private Text _instructionPopupTitleLabel;
+    private Text _instructionPopupNoticeLabel;
     private Text _instructionPopupBodyLabel;
     private ScrollRect _instructionPopupScrollRect;
     private bool _isBuilt;
     private string _lastStepKey = string.Empty;
-    private bool _isSurveyFeedbackShown;
     private int _currentPageIndex;
     private string _instructionReferenceTitle = string.Empty;
     private string _instructionReferenceBody = string.Empty;
@@ -61,7 +61,6 @@ public sealed class SessionFlowStepScreenView : ScreenView
     private readonly Dictionary<string, QuestionBinding> _questionBindings =
         new Dictionary<string, QuestionBinding>();
     private static readonly Regex BoldRegex = new Regex(@"\*\*(.+?)\*\*", RegexOptions.Compiled);
-
     public override ScreenController Construct(UIContext context)
     {
         _context = context;
@@ -98,7 +97,7 @@ public sealed class SessionFlowStepScreenView : ScreenView
         _titleLabel.text = title;
         _subtitleLabel.text = viewModel.Subtitle ?? string.Empty;
         _subtitleLabel.gameObject.SetActive(!isSurvey && !string.IsNullOrWhiteSpace(_subtitleLabel.text));
-        _bodyLabel.text = FormatSimpleMarkdown(viewModel.Body);
+        _bodyLabel.text = SimpleMarkdownFormatter.Format(viewModel.Body);
         var hasBody = !string.IsNullOrWhiteSpace(_bodyLabel.text);
         _bodyLabel.gameObject.SetActive(!isSurvey && hasBody);
         if (_bodyPanel != null)
@@ -127,11 +126,9 @@ public sealed class SessionFlowStepScreenView : ScreenView
 
         RuntimeUiFactory.SetButtonText(
             _primaryButton,
-            _isSurveyFeedbackShown && viewModel.RendererKind == SessionFlowRendererKind.Survey
+            string.IsNullOrWhiteSpace(viewModel.PrimaryActionText)
                 ? "Далее"
-                : string.IsNullOrWhiteSpace(viewModel.PrimaryActionText)
-                    ? "Далее"
-                    : viewModel.PrimaryActionText);
+                : viewModel.PrimaryActionText);
 
         var canShowSecondary = viewModel.CanSkip && !string.IsNullOrWhiteSpace(viewModel.SecondaryActionText);
         _secondaryButton.gameObject.SetActive(canShowSecondary);
@@ -165,22 +162,8 @@ public sealed class SessionFlowStepScreenView : ScreenView
 
     public bool TryPrepareSurveySubmission()
     {
-        if (_isSurveyFeedbackShown || !HasCheckableQuestions())
-        {
-            return true;
-        }
-
         var answers = CollectAnswers();
-
-        if (HasMissingRequiredAnswers(answers))
-        {
-            return true;
-        }
-
-        EvaluateCheckableQuestions();
-        _isSurveyFeedbackShown = true;
-        RuntimeUiFactory.SetButtonText(_primaryButton, "Далее");
-        return false;
+        return !HasMissingRequiredAnswers(answers);
     }
 
     private void EnsureBuilt()
@@ -193,11 +176,11 @@ public sealed class SessionFlowStepScreenView : ScreenView
         _isBuilt = true;
 
         var background = RuntimeUiFactory.CreateScreenBackground(transform);
-        var card = RuntimeUiFactory.CreateCard("FlowCard", background, new Vector2(860f, 700f));
+        var card = RuntimeUiFactory.CreateCard("FlowCard", background, new Vector2(1120f, 820f));
         var content = RuntimeUiFactory.CreateContentRoot(
             "Content",
             card,
-            new RectOffset(36, 36, 34, 30),
+            new RectOffset(26, 26, 24, 22),
             14f);
 
         _titleLabel = RuntimeUiFactory.CreateTitle(content, "Шаг сценария", TextAnchor.MiddleLeft);
@@ -207,13 +190,13 @@ public sealed class SessionFlowStepScreenView : ScreenView
         _bodyPanel = RuntimeUiFactory.CreatePanel(
             "BodyPanel",
             content,
-            new RectOffset(20, 20, 18, 18),
+            new RectOffset(14, 14, 14, 12),
             10f,
             RuntimeUiFactory.SurfaceColor);
         DisableContentSizeFitter(_bodyPanel);
         var bodyPanelLayout = _bodyPanel.gameObject.AddComponent<LayoutElement>();
-        bodyPanelLayout.minHeight = 280f;
-        bodyPanelLayout.preferredHeight = 420f;
+        bodyPanelLayout.minHeight = 420f;
+        bodyPanelLayout.preferredHeight = 560f;
         bodyPanelLayout.flexibleHeight = 1f;
 
         var bodyScrollArea = RuntimeUiFactory.CreateRow("BodyScrollArea", _bodyPanel, 8f, TextAnchor.UpperLeft);
@@ -223,13 +206,13 @@ public sealed class SessionFlowStepScreenView : ScreenView
         bodyScrollAreaLayout.childControlHeight = true;
         var bodyScrollAreaElement = bodyScrollArea.gameObject.AddComponent<LayoutElement>();
         bodyScrollAreaElement.flexibleHeight = 1f;
-        bodyScrollAreaElement.minHeight = 240f;
+        bodyScrollAreaElement.minHeight = 390f;
 
         var bodyViewport = CreateRect("BodyViewport", bodyScrollArea);
         var bodyViewportLayout = bodyViewport.gameObject.AddComponent<LayoutElement>();
         bodyViewportLayout.flexibleWidth = 1f;
         bodyViewportLayout.flexibleHeight = 1f;
-        bodyViewportLayout.minHeight = 240f;
+        bodyViewportLayout.minHeight = 390f;
         var bodyViewportImage = bodyViewport.gameObject.AddComponent<Image>();
         bodyViewportImage.color = Color.white;
         var bodyViewportMask = bodyViewport.gameObject.AddComponent<Mask>();
@@ -360,7 +343,6 @@ public sealed class SessionFlowStepScreenView : ScreenView
     private void RebuildQuestions(SessionFlowRuntimeState flowState, IReadOnlyList<SessionFlowQuestionRuntime> questions)
     {
         _questionBindings.Clear();
-        _isSurveyFeedbackShown = false;
         _pageOrder.Clear();
         _currentPageIndex = 0;
 
@@ -526,12 +508,11 @@ public sealed class SessionFlowStepScreenView : ScreenView
             }
 
             binding.Options.Add(optionBinding);
-            optionBinding.Toggle.onValueChanged.AddListener(_ => RefreshOtherInputs(binding));
-            optionBinding.Toggle.onValueChanged.AddListener(_ => OnSurveyAnswerChanged());
+            optionBinding.Toggle.onValueChanged.AddListener(_ => HandleQuestionAnswerChanged(binding));
 
             if (optionBinding.OtherInput != null)
             {
-                optionBinding.OtherInput.onValueChanged.AddListener(_ => OnSurveyAnswerChanged());
+                optionBinding.OtherInput.onValueChanged.AddListener(_ => HandleQuestionAnswerChanged(binding));
             }
         }
 
@@ -598,12 +579,11 @@ public sealed class SessionFlowStepScreenView : ScreenView
             }
 
             binding.Options.Add(optionBinding);
-            optionBinding.Toggle.onValueChanged.AddListener(_ => RefreshOtherInputs(binding));
-            optionBinding.Toggle.onValueChanged.AddListener(_ => OnSurveyAnswerChanged());
+            optionBinding.Toggle.onValueChanged.AddListener(_ => HandleQuestionAnswerChanged(binding));
 
             if (optionBinding.OtherInput != null)
             {
-                optionBinding.OtherInput.onValueChanged.AddListener(_ => OnSurveyAnswerChanged());
+                optionBinding.OtherInput.onValueChanged.AddListener(_ => HandleQuestionAnswerChanged(binding));
             }
         }
 
@@ -1152,21 +1132,6 @@ public sealed class SessionFlowStepScreenView : ScreenView
         return false;
     }
 
-    private bool HasCheckableQuestions()
-    {
-        foreach (var pair in _questionBindings)
-        {
-            if (pair.Value != null
-                && pair.Value.Question != null
-                && pair.Value.Question.IsCheckableChoiceQuestion)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     private bool HasMissingRequiredAnswers(IReadOnlyDictionary<string, string> answers)
     {
         foreach (var pair in _questionBindings)
@@ -1201,6 +1166,20 @@ public sealed class SessionFlowStepScreenView : ScreenView
         UpdatePrimaryButtonInteractable(viewModel);
     }
 
+    private void HandleQuestionAnswerChanged(QuestionBinding binding)
+    {
+        RefreshOtherInputs(binding);
+
+        if (binding != null
+            && binding.Question != null
+            && binding.Question.IsCheckableChoiceQuestion)
+        {
+            EvaluateCheckableQuestion(binding);
+        }
+
+        OnSurveyAnswerChanged();
+    }
+
     private void UpdatePrimaryButtonInteractable(SessionFlowStepViewModel viewModel)
     {
         if (_primaryButton == null)
@@ -1214,36 +1193,22 @@ public sealed class SessionFlowStepScreenView : ScreenView
             return;
         }
 
-        if (_isSurveyFeedbackShown)
-        {
-            _primaryButton.interactable = true;
-            return;
-        }
-
         _primaryButton.interactable = !HasMissingRequiredAnswers(CollectAnswers());
     }
 
-    private void EvaluateCheckableQuestions()
-    {
-        foreach (var pair in _questionBindings)
-        {
-            var binding = pair.Value;
-
-            if (binding == null
-                || binding.Question == null
-                || !binding.Question.IsCheckableChoiceQuestion)
-            {
-                continue;
-            }
-
-            EvaluateCheckableQuestion(binding);
-        }
-    }
-
-    private static void EvaluateCheckableQuestion(QuestionBinding binding)
+    private void EvaluateCheckableQuestion(QuestionBinding binding)
     {
         var selectedOptionIds = CollectSelectedOptionIds(binding);
+        ResetOptionFeedback(binding);
+
+        if (selectedOptionIds.Count == 0)
+        {
+            SetQuestionFeedback(binding, string.Empty, true);
+            return;
+        }
+
         var correctOptionIds = new List<string>();
+        var hasIncorrectSelection = false;
 
         for (var index = 0; index < binding.Options.Count; index++)
         {
@@ -1253,6 +1218,15 @@ public sealed class SessionFlowStepScreenView : ScreenView
             {
                 correctOptionIds.Add(ResolveOptionValue(option.Option));
             }
+
+            if (option != null
+                && option.Option != null
+                && !option.Option.IsCorrect
+                && option.Toggle != null
+                && option.Toggle.isOn)
+            {
+                hasIncorrectSelection = true;
+            }
         }
 
         var isCorrect = binding.Question.Type == SessionFlowQuestionType.MultipleChoice
@@ -1261,14 +1235,29 @@ public sealed class SessionFlowStepScreenView : ScreenView
               && correctOptionIds.Count == 1
               && string.Equals(selectedOptionIds[0], correctOptionIds[0], StringComparison.Ordinal);
 
-        LockQuestionInteraction(binding);
-        ApplyOptionFeedback(binding, selectedOptionIds, isCorrect);
-        SetQuestionFeedback(
-            binding,
-            isCorrect
-                ? "Верно."
-                : $"Неверно. Правильный ответ: {ResolveCorrectAnswerText(binding)}.",
-            isCorrect);
+        if (hasIncorrectSelection)
+        {
+            if (IsInstructionQuizActive())
+            {
+                ResetQuestionSelection(binding);
+                SetQuestionFeedback(binding, string.Empty, false);
+                OpenInstructionReferencePopup("Ответ не верный, найдите в инструкции правильный");
+                return;
+            }
+
+            ApplyIncorrectOptionFeedback(binding, selectedOptionIds);
+            SetQuestionFeedback(binding, "Неверно.", false);
+            return;
+        }
+
+        if (isCorrect)
+        {
+            ApplyCorrectOptionFeedback(binding, selectedOptionIds);
+            SetQuestionFeedback(binding, "Верно.", true);
+            return;
+        }
+
+        SetQuestionFeedback(binding, string.Empty, true);
     }
 
     private static List<string> CollectSelectedOptionIds(QuestionBinding binding)
@@ -1331,29 +1320,87 @@ public sealed class SessionFlowStepScreenView : ScreenView
         return false;
     }
 
-    private static string ResolveCorrectAnswerText(QuestionBinding binding)
+    private static void ResetOptionFeedback(QuestionBinding binding)
     {
-        var labels = new List<string>();
-
-        if (binding != null && binding.Options != null)
+        if (binding == null || binding.Options == null)
         {
-            for (var index = 0; index < binding.Options.Count; index++)
-            {
-                var option = binding.Options[index];
-
-                if (option != null && option.Option != null && option.Option.IsCorrect)
-                {
-                    labels.Add(option.Option.Label);
-                }
-            }
+            return;
         }
 
-        return labels.Count > 0
-            ? string.Join(", ", labels.ToArray())
-            : "не указан";
+        for (var index = 0; index < binding.Options.Count; index++)
+        {
+            var option = binding.Options[index];
+
+            if (option == null || option.Option == null || option.Label == null)
+            {
+                continue;
+            }
+
+            option.Label.color = RuntimeUiFactory.TextPrimaryColor;
+            option.Label.supportRichText = false;
+            option.Label.text = option.Option.Label;
+        }
     }
 
-    private static void LockQuestionInteraction(QuestionBinding binding)
+    private static void ApplyIncorrectOptionFeedback(
+        QuestionBinding binding,
+        IReadOnlyList<string> selectedOptionIds)
+    {
+        if (binding == null || binding.Options == null)
+        {
+            return;
+        }
+
+        for (var index = 0; index < binding.Options.Count; index++)
+        {
+            var option = binding.Options[index];
+
+            if (option == null || option.Option == null || option.Label == null)
+            {
+                continue;
+            }
+
+            var optionId = ResolveOptionValue(option.Option);
+
+            if (ContainsValue(selectedOptionIds, optionId) && !option.Option.IsCorrect)
+            {
+                option.Label.color = RuntimeUiFactory.DangerColor;
+                option.Label.supportRichText = true;
+                option.Label.text = $"{option.Option.Label} <b>(неверно)</b>";
+            }
+        }
+    }
+
+    private static void ApplyCorrectOptionFeedback(
+        QuestionBinding binding,
+        IReadOnlyList<string> selectedOptionIds)
+    {
+        if (binding == null || binding.Options == null)
+        {
+            return;
+        }
+
+        for (var index = 0; index < binding.Options.Count; index++)
+        {
+            var option = binding.Options[index];
+
+            if (option == null || option.Option == null || option.Label == null)
+            {
+                continue;
+            }
+
+            var optionId = ResolveOptionValue(option.Option);
+
+            if (ContainsValue(selectedOptionIds, optionId))
+            {
+                option.Label.color = RuntimeUiFactory.TextPrimaryColor;
+                option.Label.supportRichText = true;
+                option.Label.text = $"{option.Option.Label} <b>(верно)</b>";
+            }
+        }
+    }
+
+    private void ResetQuestionSelection(QuestionBinding binding)
     {
         if (binding == null || binding.Options == null)
         {
@@ -1371,60 +1418,17 @@ public sealed class SessionFlowStepScreenView : ScreenView
 
             if (option.Toggle != null)
             {
-                option.Toggle.interactable = false;
+                option.Toggle.SetIsOnWithoutNotify(false);
             }
 
             if (option.OtherInput != null)
             {
-                option.OtherInput.interactable = false;
+                option.OtherInput.SetTextWithoutNotify(string.Empty);
             }
         }
-    }
 
-    private static void ApplyOptionFeedback(
-        QuestionBinding binding,
-        IReadOnlyList<string> selectedOptionIds,
-        bool isCorrect)
-    {
-        if (binding == null || binding.Options == null)
-        {
-            return;
-        }
-
-        for (var index = 0; index < binding.Options.Count; index++)
-        {
-            var option = binding.Options[index];
-
-            if (option == null || option.Option == null || option.Label == null)
-            {
-                continue;
-            }
-
-            var optionId = ResolveOptionValue(option.Option);
-            var isSelected = ContainsValue(selectedOptionIds, optionId);
-
-            if (option.Option.IsCorrect)
-            {
-                option.Label.color = RuntimeUiFactory.TextPrimaryColor;
-                option.Label.supportRichText = true;
-                option.Label.text = isSelected && isCorrect
-                    ? $"{option.Option.Label} <b>(верно)</b>"
-                    : $"{option.Option.Label} <b>(правильный ответ)</b>";
-                continue;
-            }
-
-            if (isSelected)
-            {
-                option.Label.color = RuntimeUiFactory.DangerColor;
-                option.Label.supportRichText = true;
-                option.Label.text = $"{option.Option.Label} <b>(неверно)</b>";
-                continue;
-            }
-
-            option.Label.color = RuntimeUiFactory.TextPrimaryColor;
-            option.Label.supportRichText = false;
-            option.Label.text = option.Option.Label;
-        }
+        RefreshOtherInputs(binding);
+        ResetOptionFeedback(binding);
     }
 
     private static void SetQuestionFeedback(QuestionBinding binding, string text, bool isCorrect)
@@ -1578,11 +1582,11 @@ public sealed class SessionFlowStepScreenView : ScreenView
         overlayButton.transition = Selectable.Transition.None;
         overlayButton.onClick.AddListener(CloseInstructionReferencePopup);
 
-        var card = RuntimeUiFactory.CreateCard("InstructionReferenceCard", _instructionPopupOverlay, new Vector2(760f, 620f));
+        var card = RuntimeUiFactory.CreateCard("InstructionReferenceCard", _instructionPopupOverlay, new Vector2(1120f, 820f));
         var content = RuntimeUiFactory.CreateContentRoot(
             "InstructionReferenceContent",
             card,
-            new RectOffset(28, 28, 28, 24),
+            new RectOffset(22, 22, 20, 18),
             12f);
 
         var headerRow = RuntimeUiFactory.CreateRow("InstructionReferenceHeader", content, 12f, TextAnchor.MiddleCenter);
@@ -1605,16 +1609,21 @@ public sealed class SessionFlowStepScreenView : ScreenView
 
         closeButton.onClick.AddListener(CloseInstructionReferencePopup);
 
+        _instructionPopupNoticeLabel = RuntimeUiFactory.CreateBodyText(content, string.Empty, TextAnchor.MiddleLeft);
+        _instructionPopupNoticeLabel.color = RuntimeUiFactory.DangerColor;
+        RuntimeUiFactory.ApplyTextStyle(_instructionPopupNoticeLabel, FontStyle.Bold);
+        _instructionPopupNoticeLabel.gameObject.SetActive(false);
+
         var bodyPanel = RuntimeUiFactory.CreatePanel(
             "InstructionReferenceBodyPanel",
             content,
-            new RectOffset(18, 18, 18, 18),
+            new RectOffset(12, 12, 12, 12),
             10f,
             RuntimeUiFactory.SurfaceColor);
         DisableContentSizeFitter(bodyPanel);
         var panelLayout = bodyPanel.gameObject.AddComponent<LayoutElement>();
         panelLayout.flexibleHeight = 1f;
-        panelLayout.minHeight = 420f;
+        panelLayout.minHeight = 600f;
 
         var scrollArea = RuntimeUiFactory.CreateRow("InstructionReferenceScrollArea", bodyPanel, 8f, TextAnchor.UpperLeft);
         var scrollAreaLayout = scrollArea.GetComponent<HorizontalLayoutGroup>();
@@ -1623,13 +1632,13 @@ public sealed class SessionFlowStepScreenView : ScreenView
         scrollAreaLayout.childControlHeight = true;
         var scrollAreaElement = scrollArea.gameObject.AddComponent<LayoutElement>();
         scrollAreaElement.flexibleHeight = 1f;
-        scrollAreaElement.minHeight = 380f;
+        scrollAreaElement.minHeight = 560f;
 
         var viewport = CreateRect("InstructionReferenceViewport", scrollArea);
         var viewportLayout = viewport.gameObject.AddComponent<LayoutElement>();
         viewportLayout.flexibleWidth = 1f;
         viewportLayout.flexibleHeight = 1f;
-        viewportLayout.minHeight = 380f;
+        viewportLayout.minHeight = 560f;
         var viewportImage = viewport.gameObject.AddComponent<Image>();
         viewportImage.color = Color.white;
         var viewportMask = viewport.gameObject.AddComponent<Mask>();
@@ -1726,6 +1735,11 @@ public sealed class SessionFlowStepScreenView : ScreenView
 
     private void OpenInstructionReferencePopup()
     {
+        OpenInstructionReferencePopup(null);
+    }
+
+    private void OpenInstructionReferencePopup(string noticeText)
+    {
         if (_instructionPopupOverlay == null || string.IsNullOrWhiteSpace(_instructionReferenceBody))
         {
             return;
@@ -1734,7 +1748,9 @@ public sealed class SessionFlowStepScreenView : ScreenView
         _instructionPopupTitleLabel.text = string.IsNullOrWhiteSpace(_instructionReferenceTitle)
             ? "Инструкция"
             : _instructionReferenceTitle;
-        _instructionPopupBodyLabel.text = FormatSimpleMarkdown(_instructionReferenceBody);
+        _instructionPopupNoticeLabel.text = noticeText ?? string.Empty;
+        _instructionPopupNoticeLabel.gameObject.SetActive(!string.IsNullOrWhiteSpace(_instructionPopupNoticeLabel.text));
+        _instructionPopupBodyLabel.text = SimpleMarkdownFormatter.Format(_instructionReferenceBody);
         _instructionPopupOverlay.gameObject.SetActive(true);
         _instructionPopupOverlay.SetAsLastSibling();
 
@@ -1751,6 +1767,17 @@ public sealed class SessionFlowStepScreenView : ScreenView
         {
             _instructionPopupOverlay.gameObject.SetActive(false);
         }
+    }
+
+    private bool IsInstructionQuizActive()
+    {
+        var flowState = _context != null && _context.SessionFlow != null
+            ? _context.SessionFlow.Current
+            : SessionFlowRuntimeState.Empty;
+        var descriptor = flowState != null && flowState.ActiveStepView != null
+            ? flowState.ActiveStepView.Descriptor
+            : SessionFlowStepDescriptor.Empty;
+        return descriptor != null && descriptor.Type == SessionFlowStepType.InstructionQuiz;
     }
 
     private static bool IsInstructionReferenceCandidate(FlowStepRuntime step)
