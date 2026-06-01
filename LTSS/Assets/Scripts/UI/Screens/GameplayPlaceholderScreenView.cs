@@ -65,8 +65,10 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
     private RectTransform _expenseContent;
     private RectTransform _assetContent;
     private RectTransform _infoContent;
+    private RectTransform _shellContent;
     private RectTransform _mainLayout;
     private RectTransform _footerRow;
+    private ScrollRect _shellScrollRect;
     private ScrollRect _expenseScrollRect;
     private ScrollRect _instructionPopupScrollRect;
     private Image _expenseTopFade;
@@ -159,21 +161,67 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
 
         var background = RuntimeUiFactory.CreateScreenBackground(transform);
         var shell = RuntimeUiFactory.CreateCard("GameplayShell", background, new Vector2(1500f, 900f));
-        var content = RuntimeUiFactory.CreateContentRoot(
-            "Content",
-            shell,
-            new RectOffset(24, 24, 24, 22),
-            16f);
+        _shellContent = CreateShellScrollContent(shell);
 
-        BuildHeader(content);
-        BuildMetrics(content);
-        BuildMain(content);
-        BuildFooter(content);
+        BuildHeader(_shellContent);
+        BuildMetrics(_shellContent);
+        BuildMain(_shellContent);
+        BuildFooter(_shellContent);
         BuildInstructionReferencePopup(background);
 
-        _emptyStateLabel = RuntimeUiFactory.CreateBodyText(content, string.Empty, TextAnchor.MiddleCenter);
+        _emptyStateLabel = RuntimeUiFactory.CreateBodyText(_shellContent, string.Empty, TextAnchor.MiddleCenter);
         _emptyStateLabel.color = RuntimeUiFactory.TextSecondaryColor;
         _emptyStateLabel.gameObject.SetActive(false);
+    }
+
+    private RectTransform CreateShellScrollContent(Transform parent)
+    {
+        var scrollArea = CreateRow(parent, "ShellScrollArea", 10f, TextAnchor.UpperLeft);
+        Stretch(scrollArea, 20f, 18f, 20f, 18f);
+        var scrollAreaLayout = scrollArea.GetComponent<HorizontalLayoutGroup>();
+        scrollAreaLayout.childForceExpandWidth = false;
+        scrollAreaLayout.childForceExpandHeight = true;
+        scrollAreaLayout.childControlHeight = true;
+
+        var viewport = CreateRect("ShellViewport", scrollArea);
+        AddLayoutElement(viewport.gameObject, flexibleWidth: 1f, flexibleHeight: 1f);
+        var viewportImage = viewport.gameObject.AddComponent<Image>();
+        viewportImage.color = Color.white;
+        var viewportMask = viewport.gameObject.AddComponent<Mask>();
+        viewportMask.showMaskGraphic = false;
+
+        _shellScrollRect = scrollArea.gameObject.AddComponent<ScrollRect>();
+        _shellScrollRect.viewport = viewport;
+        _shellScrollRect.horizontal = false;
+        _shellScrollRect.vertical = true;
+        _shellScrollRect.movementType = ScrollRect.MovementType.Clamped;
+        _shellScrollRect.scrollSensitivity = 24f;
+        var verticalScrollbar = CreateVerticalScrollbar(scrollArea);
+        _shellScrollRect.verticalScrollbar = verticalScrollbar;
+        _shellScrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
+
+        var content = CreateRect("Content", viewport);
+        content.anchorMin = new Vector2(0f, 1f);
+        content.anchorMax = new Vector2(1f, 1f);
+        content.pivot = new Vector2(0.5f, 1f);
+        content.anchoredPosition = Vector2.zero;
+        content.sizeDelta = new Vector2(0f, 0f);
+
+        var layout = content.gameObject.AddComponent<VerticalLayoutGroup>();
+        layout.padding = new RectOffset(4, 6, 4, 4);
+        layout.spacing = 16f;
+        layout.childAlignment = TextAnchor.UpperLeft;
+        layout.childControlWidth = true;
+        layout.childControlHeight = true;
+        layout.childForceExpandWidth = true;
+        layout.childForceExpandHeight = false;
+
+        var fitter = content.gameObject.AddComponent<ContentSizeFitter>();
+        fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+        fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        _shellScrollRect.content = content;
+        return content;
     }
 
     private void BuildHeader(Transform parent)
@@ -221,16 +269,14 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
     private void BuildMain(Transform parent)
     {
         _mainLayout = CreateRow(parent, "MainLayout", 16f, TextAnchor.UpperLeft);
-        AddLayoutElement(_mainLayout.gameObject, flexibleHeight: 1f);
 
         var leftColumn = CreateVerticalGroup(_mainLayout, "LeftColumn", 16f, TextAnchor.UpperLeft);
-        AddLayoutElement(leftColumn.gameObject, preferredWidth: 1040f, flexibleWidth: 1.3f, flexibleHeight: 1f);
+        AddLayoutElement(leftColumn.gameObject, preferredWidth: 1040f, flexibleWidth: 1.3f);
 
         var rightColumn = CreateVerticalGroup(_mainLayout, "RightColumn", 16f, TextAnchor.UpperLeft);
-        AddLayoutElement(rightColumn.gameObject, preferredWidth: 400f, flexibleWidth: 0.7f, flexibleHeight: 1f);
+        AddLayoutElement(rightColumn.gameObject, preferredWidth: 400f, flexibleWidth: 0.7f);
 
         _expenseContent = CreateScrollableSection(leftColumn, "Расходы", out _expenseScrollRect);
-        AddLayoutElement(_expenseContent.parent.gameObject, flexibleHeight: 1f);
 
         _actionButtonsColumn = CreateVerticalGroup(leftColumn, "ActionButtonsColumn", 12f, TextAnchor.UpperLeft);
         AddLayoutElement(_actionButtonsColumn.gameObject, preferredHeight: 162f);
@@ -549,10 +595,19 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
             }
         }
 
-        if (_expenseScrollRect != null)
+        if (_expenseContent != null)
         {
             LayoutRebuilder.ForceRebuildLayoutImmediate(_expenseContent);
-            UpdateExpenseScrollUi(runtimeState);
+        }
+
+        if (_mainLayout != null)
+        {
+            LayoutRebuilder.ForceRebuildLayoutImmediate(_mainLayout);
+        }
+
+        if (_shellContent != null)
+        {
+            LayoutRebuilder.ForceRebuildLayoutImmediate(_shellContent);
         }
     }
 
@@ -698,6 +753,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
     {
         if (!NeedsRebuild(_expenseRows, definitions, definition => definition.Id))
         {
+            UpdateExpenseSectionHeight(definitions);
             return;
         }
 
@@ -713,14 +769,14 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
 
             var row = RuntimeUiFactory.CreateSurface($"Expense_{definition.Id}", _expenseContent, RuntimeUiFactory.ElevatedSurfaceColor);
             var rowLayout = row.gameObject.AddComponent<HorizontalLayoutGroup>();
-            rowLayout.padding = new RectOffset(16, 16, 14, 14);
-            rowLayout.spacing = 12f;
+            rowLayout.padding = new RectOffset(18, 18, 16, 16);
+            rowLayout.spacing = 14f;
             rowLayout.childAlignment = TextAnchor.MiddleLeft;
             rowLayout.childControlWidth = true;
             rowLayout.childControlHeight = true;
             rowLayout.childForceExpandWidth = false;
             rowLayout.childForceExpandHeight = false;
-            AddLayoutElement(row.gameObject, preferredHeight: 84f);
+            AddLayoutElement(row.gameObject, preferredHeight: 92f);
 
             var textColumn = CreateVerticalGroup(row, "TextColumn", 4f, TextAnchor.MiddleLeft);
             AddLayoutElement(textColumn.gameObject, flexibleWidth: 1f, preferredWidth: 360f);
@@ -776,6 +832,56 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
                 SourceDropdown = sourceDropdown
             };
         }
+
+        UpdateExpenseSectionHeight(definitions);
+    }
+
+    private void UpdateExpenseSectionHeight(IReadOnlyList<PeriodExpenseDefinition> definitions)
+    {
+        if (_expenseContent == null)
+        {
+            return;
+        }
+
+        var section = _expenseContent.parent as RectTransform;
+
+        if (section == null)
+        {
+            return;
+        }
+
+        var expenseCount = 0;
+
+        if (definitions != null)
+        {
+            for (var index = 0; index < definitions.Count; index++)
+            {
+                if (definitions[index] != null)
+                {
+                    expenseCount++;
+                }
+            }
+        }
+
+        const float baseSectionHeight = 420f;
+        const float headerAndPaddingHeight = 96f;
+        const float rowHeight = 92f;
+        const float rowSpacing = 10f;
+
+        var preferredHeight = Mathf.Max(
+            baseSectionHeight,
+            headerAndPaddingHeight + (expenseCount * rowHeight) + (Mathf.Max(0, expenseCount - 1) * rowSpacing));
+
+        var layoutElement = section.GetComponent<LayoutElement>();
+
+        if (layoutElement == null)
+        {
+            layoutElement = section.gameObject.AddComponent<LayoutElement>();
+        }
+
+        layoutElement.minHeight = preferredHeight;
+        layoutElement.preferredHeight = preferredHeight;
+        layoutElement.flexibleHeight = 0f;
     }
 
     private void RebuildAssetCards(IReadOnlyList<PeriodAssetBalance> assets)
@@ -1349,69 +1455,12 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
 
     private RectTransform CreateScrollableSection(Transform parent, string title, out ScrollRect scrollRect)
     {
-        var section = RuntimeUiFactory.CreateSurface(title, parent, RuntimeUiFactory.SurfaceColor);
-        AddLayoutElement(section.gameObject, flexibleHeight: 1f);
-        var layout = section.gameObject.AddComponent<VerticalLayoutGroup>();
-        layout.padding = new RectOffset(18, 18, 18, 18);
-        layout.spacing = 12f;
-        layout.childAlignment = TextAnchor.UpperLeft;
-        layout.childControlWidth = true;
-        layout.childControlHeight = true;
-        layout.childForceExpandWidth = true;
-        layout.childForceExpandHeight = false;
-
-        RuntimeUiFactory.CreateBodyText(section, title);
-
-        var hintRow = CreateRow(section, "ExpenseHintRow", 8f, TextAnchor.MiddleLeft);
-        AddLayoutElement(hintRow.gameObject, preferredHeight: 22f);
-        _expenseHintLabel = RuntimeUiFactory.CreateCaption(hintRow, " ", TextAnchor.MiddleLeft);
-        _expenseHintLabel.horizontalOverflow = HorizontalWrapMode.Wrap;
-        _expenseHintLabel.verticalOverflow = VerticalWrapMode.Overflow;
-        _expenseHintLabel.color = RuntimeUiFactory.TextSecondaryColor;
-
-        var scrollArea = CreateRow(section, "ExpenseScrollArea", 8f, TextAnchor.UpperLeft);
-        var scrollAreaLayout = scrollArea.GetComponent<HorizontalLayoutGroup>();
-        scrollAreaLayout.childForceExpandWidth = false;
-        scrollAreaLayout.childForceExpandHeight = true;
-        scrollAreaLayout.childControlHeight = true;
-        AddLayoutElement(scrollArea.gameObject, flexibleHeight: 1f, minimumHeight: 260f);
-
-        var viewport = CreateRect("ExpenseViewport", scrollArea);
-        AddLayoutElement(viewport.gameObject, flexibleWidth: 1f, flexibleHeight: 1f, minimumHeight: 260f);
-        var viewportImage = viewport.gameObject.AddComponent<Image>();
-        viewportImage.color = Color.white;
-        var viewportMask = viewport.gameObject.AddComponent<Mask>();
-        viewportMask.showMaskGraphic = false;
-
-        scrollRect = section.gameObject.AddComponent<ScrollRect>();
-        scrollRect.viewport = viewport;
-        scrollRect.horizontal = false;
-        scrollRect.vertical = true;
-        scrollRect.movementType = ScrollRect.MovementType.Clamped;
-        scrollRect.scrollSensitivity = 24f;
-        var verticalScrollbar = CreateVerticalScrollbar(scrollArea);
-        scrollRect.verticalScrollbar = verticalScrollbar;
-        scrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
-        scrollRect.onValueChanged.AddListener(_ => OnExpenseScrollChanged());
-
-        var content = RuntimeUiFactory.CreateContentRoot(
-            "ExpenseContent",
-            viewport,
-            new RectOffset(0, 0, 0, 0),
-            10f);
-        content.anchorMin = new Vector2(0f, 1f);
-        content.anchorMax = new Vector2(1f, 1f);
-        content.pivot = new Vector2(0.5f, 1f);
-        content.anchoredPosition = Vector2.zero;
-        content.sizeDelta = new Vector2(0f, 0f);
-        var fitter = content.gameObject.AddComponent<ContentSizeFitter>();
-        fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
-        fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-        scrollRect.content = content;
-
-        _expenseTopFade = CreateExpenseFadeOverlay(viewport, "ExpenseTopFade", true);
-        _expenseBottomFade = CreateExpenseFadeOverlay(viewport, "ExpenseBottomFade", false);
-        return content;
+        scrollRect = null;
+        _expenseScrollRect = null;
+        _expenseTopFade = null;
+        _expenseBottomFade = null;
+        _expenseHintLabel = null;
+        return CreateSection(parent, title);
     }
 
     private static RectTransform CreateVerticalGroup(
