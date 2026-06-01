@@ -12,6 +12,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
     private sealed class ExpenseRowWidgets
     {
         public string ExpenseId;
+        public GameObject Root;
         public Text TitleLabel;
         public Text MetaLabel;
         public GameObject RequiredBadge;
@@ -24,6 +25,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
     private sealed class AssetCardWidgets
     {
         public string AssetId;
+        public GameObject Root;
         public Text TitleLabel;
         public Text ValueLabel;
         public Text CaptionLabel;
@@ -34,8 +36,20 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
     private sealed class InfoRowWidgets
     {
         public string InfoId;
+        public GameObject Root;
         public Text Label;
         public Text Value;
+    }
+
+    private sealed class HighlightFrameState
+    {
+        public Graphic Graphic;
+        public Color OriginalGraphicColor;
+        public bool OriginalGraphicRaycastTarget;
+        public Outline Outline;
+        public Color OriginalOutlineColor;
+        public Vector2 OriginalOutlineDistance;
+        public bool OriginalOutlineEnabled;
     }
 
     private Text _periodTitleLabel;
@@ -77,11 +91,13 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
     private readonly Dictionary<string, ExpenseRowWidgets> _expenseRows = new Dictionary<string, ExpenseRowWidgets>();
     private readonly Dictionary<string, AssetCardWidgets> _assetCards = new Dictionary<string, AssetCardWidgets>();
     private readonly Dictionary<string, InfoRowWidgets> _infoRows = new Dictionary<string, InfoRowWidgets>();
+    private readonly Dictionary<GameObject, HighlightFrameState> _featureHighlightFrames = new Dictionary<GameObject, HighlightFrameState>();
     private bool _hasDismissedExpenseScrollHint;
     private bool _isBuilt;
     private string _instructionReferenceTitle = string.Empty;
     private string _instructionReferenceBody = string.Empty;
     private static readonly Color UjePositiveColor = new Color32(84, 156, 110, 255);
+    private static readonly Color NewFeatureHighlightColor = new Color32(214, 73, 73, 255);
 
     public override ScreenController Construct(UIContext context)
     {
@@ -102,7 +118,8 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         Action onConsumerCreditAction,
         Action onApartmentPurchaseAction,
         Action onMortgageAction,
-        Action onPdsAction)
+        Action onPdsAction,
+        IReadOnlyCollection<string> newlyEnabledFeatures)
     {
         EnsureBuilt();
         _instructionReferenceTitle = instructionTitle ?? string.Empty;
@@ -147,6 +164,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         ApplyExpenses(runtimeState, onExpenseAmountChanged, onApplyRequiredExpenseAmount, onExpenseSourceChanged);
         ApplyActionButtons(runtimeState);
         ApplyAssets(runtimeState, onAssetAction);
+        ApplyFeatureHighlights(runtimeState, newlyEnabledFeatures);
         ApplyFooter(runtimeState);
     }
 
@@ -538,7 +556,8 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
 
             if (widgets.RequiredBadge != null)
             {
-                var showRequiredBadge = expenseDefinition.IsRequired && expenseDefinition.MinimumAmount > 0d;
+                var showRequiredBadge = expenseDefinition.IsRequired && expenseDefinition.MinimumAmount > 0d
+                    || string.Equals(expenseDefinition.Id, "holiday", StringComparison.Ordinal) && expenseDefinition.MaximumAmount > 0d;
                 widgets.RequiredBadge.SetActive(showRequiredBadge);
 
                 if (showRequiredBadge && widgets.RequiredBadgeLabel != null)
@@ -546,6 +565,10 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
                     widgets.RequiredBadgeLabel.text = string.Equals(expenseDefinition.Id, "housing_rent", StringComparison.Ordinal)
                         ? FormatMoney(expenseDefinition.MinimumAmount)
                         : $"мин. {FormatMoney(expenseDefinition.MinimumAmount)}";
+                    var badgeAmount = string.Equals(expenseDefinition.Id, "holiday", StringComparison.Ordinal)
+                        ? expenseDefinition.MaximumAmount
+                        : expenseDefinition.MinimumAmount;
+                    widgets.RequiredBadgeLabel.text = FormatMoney(badgeAmount);
                 }
             }
 
@@ -709,6 +732,159 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         }
     }
 
+    private void ApplyFeatureHighlights(
+        PeriodRuntimeState runtimeState,
+        IReadOnlyCollection<string> newlyEnabledFeatures)
+    {
+        ResetFeatureHighlights();
+
+        if (runtimeState == null
+            || !runtimeState.HasDefinition
+            || newlyEnabledFeatures == null
+            || newlyEnabledFeatures.Count == 0)
+        {
+            return;
+        }
+
+        var featureSet = new HashSet<string>(newlyEnabledFeatures, StringComparer.OrdinalIgnoreCase);
+
+        if (featureSet.Contains("consumer_credit"))
+        {
+            SetFeatureHighlight(_consumerCreditButton != null ? _consumerCreditButton.gameObject : null, true);
+            HighlightInfoRow("credit_rate");
+        }
+
+        if (featureSet.Contains("mortgage"))
+        {
+            SetFeatureHighlight(_apartmentButton != null ? _apartmentButton.gameObject : null, true);
+            SetFeatureHighlight(_mortgageButton != null ? _mortgageButton.gameObject : null, true);
+            HighlightInfoRow("mortgage_rate");
+        }
+
+        if (featureSet.Contains("pds"))
+        {
+            SetFeatureHighlight(_pdsButton != null ? _pdsButton.gameObject : null, true);
+            HighlightAssetCard(ConsumerCreditMath.PdsAssetId);
+        }
+
+        if (featureSet.Contains("education"))
+        {
+            HighlightExpenseRow("education");
+        }
+
+        if (featureSet.Contains("child_expense"))
+        {
+            HighlightExpenseRow("child_expense");
+        }
+
+        if (featureSet.Contains("pension_info"))
+        {
+            HighlightInfoRow("pension_savings");
+        }
+    }
+
+    private void HighlightExpenseRow(string expenseId)
+    {
+        if (!string.IsNullOrWhiteSpace(expenseId)
+            && _expenseRows.TryGetValue(expenseId, out var widgets))
+        {
+            SetFeatureHighlight(widgets.Root, true);
+        }
+    }
+
+    private void HighlightAssetCard(string assetId)
+    {
+        if (!string.IsNullOrWhiteSpace(assetId)
+            && _assetCards.TryGetValue(assetId, out var widgets))
+        {
+            SetFeatureHighlight(widgets.Root, true);
+        }
+    }
+
+    private void HighlightInfoRow(string infoId)
+    {
+        if (!string.IsNullOrWhiteSpace(infoId)
+            && _infoRows.TryGetValue(infoId, out var widgets))
+        {
+            SetFeatureHighlight(widgets.Root, true);
+        }
+    }
+
+    private void ResetFeatureHighlights()
+    {
+        foreach (var entry in _featureHighlightFrames)
+        {
+            SetFeatureHighlight(entry.Key, false);
+        }
+    }
+
+    private void SetFeatureHighlight(GameObject target, bool isHighlighted)
+    {
+        if (target == null)
+        {
+            return;
+        }
+
+        if (!_featureHighlightFrames.TryGetValue(target, out var state))
+        {
+            var graphic = target.GetComponent<Graphic>();
+
+            if (graphic == null)
+            {
+                var image = target.AddComponent<Image>();
+                image.color = new Color(1f, 1f, 1f, 0.01f);
+                image.raycastTarget = false;
+                graphic = image;
+            }
+
+            var outline = target.GetComponent<Outline>();
+
+            if (outline == null)
+            {
+                outline = target.AddComponent<Outline>();
+                outline.effectColor = RuntimeUiFactory.BorderColor;
+                outline.effectDistance = new Vector2(1f, -1f);
+                outline.enabled = false;
+            }
+
+            state = new HighlightFrameState
+            {
+                Graphic = graphic,
+                OriginalGraphicColor = graphic.color,
+                OriginalGraphicRaycastTarget = graphic.raycastTarget,
+                Outline = outline,
+                OriginalOutlineColor = outline.effectColor,
+                OriginalOutlineDistance = outline.effectDistance,
+                OriginalOutlineEnabled = outline.enabled
+            };
+
+            _featureHighlightFrames[target] = state;
+        }
+
+        if (state.Outline == null)
+        {
+            return;
+        }
+
+        if (isHighlighted && target.activeInHierarchy)
+        {
+            state.Outline.enabled = true;
+            state.Outline.effectColor = NewFeatureHighlightColor;
+            state.Outline.effectDistance = new Vector2(3f, -3f);
+            return;
+        }
+
+        state.Outline.effectColor = state.OriginalOutlineColor;
+        state.Outline.effectDistance = state.OriginalOutlineDistance;
+        state.Outline.enabled = state.OriginalOutlineEnabled;
+
+        if (state.Graphic != null)
+        {
+            state.Graphic.color = state.OriginalGraphicColor;
+            state.Graphic.raycastTarget = state.OriginalGraphicRaycastTarget;
+        }
+    }
+
     private void ApplyFooter(PeriodRuntimeState runtimeState)
     {
         var summary = runtimeState.Summary ?? PeriodCalculationSummary.Empty;
@@ -823,6 +999,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
             _expenseRows[definition.Id] = new ExpenseRowWidgets
             {
                 ExpenseId = definition.Id,
+                Root = row.gameObject,
                 TitleLabel = title,
                 MetaLabel = meta,
                 RequiredBadge = requiredBadge.gameObject,
@@ -962,6 +1139,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
             _infoRows[infoValue.Id] = new InfoRowWidgets
             {
                 InfoId = infoValue.Id,
+                Root = row.gameObject,
                 Label = label,
                 Value = value
             };
@@ -1113,6 +1291,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         _assetCards[asset.AssetId] = new AssetCardWidgets
         {
             AssetId = asset.AssetId,
+            Root = card.gameObject,
             TitleLabel = title,
             ValueLabel = value,
             CaptionLabel = caption,

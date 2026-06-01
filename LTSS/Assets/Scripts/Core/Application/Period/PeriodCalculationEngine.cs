@@ -17,6 +17,9 @@ namespace Game.Core.Application.Periods
         private const double HolidayBonusUje = 15d;
         private const double LeisureZeroSpendPenalty = -10d;
         private const double DebtUjePenaltyRate = 0.5d;
+        private const double GoodsServicesSeverePenaltyRate = 4d;
+        private const double GoodsServicesMildPenaltyRate = 1.5d;
+        private const double GoodsServicesSeverePenaltyThresholdRatio = 0.20d;
 
         public PeriodCalculationSummary Recalculate(
             PeriodRuntimeDefinition definition,
@@ -305,13 +308,21 @@ namespace Game.Core.Application.Periods
             var minimumAmount = expenseDefinition.MinimumAmount > 0d
                 ? expenseDefinition.MinimumAmount
                 : ScaleThreshold(definition, GoodsServicesMinBase);
+            var severePenaltyThreshold = minimumAmount * GoodsServicesSeverePenaltyThresholdRatio;
             var upperThreshold = expenseDefinition.UjeReferenceAmount > minimumAmount + ComparisonTolerance
                 ? expenseDefinition.UjeReferenceAmount
                 : ScaleThreshold(definition, GoodsServicesUpperBase);
 
             if (amount + ComparisonTolerance < minimumAmount)
             {
-                return 0d;
+                var deficit = Math.Max(0d, minimumAmount - amount);
+
+                if (amount + ComparisonTolerance < severePenaltyThreshold)
+                {
+                    return -Math.Floor(deficit + ComparisonTolerance) * GoodsServicesSeverePenaltyRate;
+                }
+
+                return -deficit * GoodsServicesMildPenaltyRate;
             }
 
             double coefficient;

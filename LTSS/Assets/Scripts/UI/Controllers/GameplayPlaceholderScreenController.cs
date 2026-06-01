@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using Game.Core.Application.Periods;
 using Game.Core.Application.Session;
 using Game.Core.Application.UI;
@@ -54,7 +56,8 @@ public sealed class GameplayPlaceholderScreenController : ScreenController
             OnConsumerCreditAction,
             OnApartmentPurchaseAction,
             OnMortgageAction,
-            OnPdsAction);
+            OnPdsAction,
+            ResolveNewFeatures(latestState));
     }
 
     private string ResolveInstructionTitle()
@@ -129,6 +132,45 @@ public sealed class GameplayPlaceholderScreenController : ScreenController
             default:
                 return false;
         }
+    }
+
+    private IReadOnlyCollection<string> ResolveNewFeatures(PeriodRuntimeState runtimeState)
+    {
+        if (runtimeState == null
+            || !runtimeState.HasDefinition
+            || runtimeState.Definition.Meta == null
+            || runtimeState.PeriodNumber <= 1)
+        {
+            return Array.Empty<string>();
+        }
+
+        var config = Context.SessionFlow != null
+            ? Context.SessionFlow.Current.Config
+            : SessionConfigRuntime.Empty;
+
+        if (config == null
+            || !config.TryGetPeriod(runtimeState.PeriodNumber - 1, out var previousPeriod)
+            || previousPeriod == null)
+        {
+            return Array.Empty<string>();
+        }
+
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var currentFeatures = runtimeState.Definition.Meta.EnabledFeatures ?? Array.Empty<string>();
+
+        for (var index = 0; index < currentFeatures.Count; index++)
+        {
+            var feature = currentFeatures[index];
+
+            if (!string.IsNullOrWhiteSpace(feature) && !previousPeriod.HasFeature(feature))
+            {
+                result.Add(feature);
+            }
+        }
+
+        return result.Count > 0
+            ? result
+            : Array.Empty<string>();
     }
 
     private void OnBack()
