@@ -1884,7 +1884,9 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
         }
 
         var minimumAmount = definition.MinimumAmount > 0d
-            ? definition.MinimumAmount
+            ? string.Equals(definition.Id, "goods_services", StringComparison.Ordinal)
+                ? definition.MinimumAmount * 0.25d
+                : definition.MinimumAmount
             : 0.01d;
         return amount + 0.01d >= minimumAmount;
     }

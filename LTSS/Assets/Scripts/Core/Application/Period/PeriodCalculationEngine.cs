@@ -19,7 +19,8 @@ namespace Game.Core.Application.Periods
         private const double DebtUjePenaltyRate = 0.5d;
         private const double GoodsServicesSeverePenaltyRate = 4d;
         private const double GoodsServicesMildPenaltyRate = 1.5d;
-        private const double GoodsServicesSeverePenaltyThresholdRatio = 0.20d;
+        private const double GoodsServicesCompletionThresholdRatio = 0.25d;
+        private const double GoodsServicesSeverePenaltyThresholdRatio = 0.50d;
 
         public PeriodCalculationSummary Recalculate(
             PeriodRuntimeDefinition definition,
@@ -199,11 +200,12 @@ namespace Game.Core.Application.Periods
             ICollection<PeriodValidationIssue> issues)
         {
             var amount = state != null ? Math.Max(0d, state.Amount) : 0d;
+            var completionMinimumAmount = GetCompletionMinimumAmount(expenseDefinition);
 
             if (definition.ValidationSettings.RequireRequiredExpenses
                 && expenseDefinition.IsRequired
                 && amount + definition.ValidationSettings.CompletionRemainderTolerance
-                < Math.Max(expenseDefinition.MinimumAmount, 0.01d))
+                < Math.Max(completionMinimumAmount, 0.01d))
             {
                 issues.Add(new PeriodValidationIssue(
                     "required_expense_missing",
@@ -308,6 +310,7 @@ namespace Game.Core.Application.Periods
             var minimumAmount = expenseDefinition.MinimumAmount > 0d
                 ? expenseDefinition.MinimumAmount
                 : ScaleThreshold(definition, GoodsServicesMinBase);
+            var completionThreshold = minimumAmount * GoodsServicesCompletionThresholdRatio;
             var severePenaltyThreshold = minimumAmount * GoodsServicesSeverePenaltyThresholdRatio;
             var upperThreshold = expenseDefinition.UjeReferenceAmount > minimumAmount + ComparisonTolerance
                 ? expenseDefinition.UjeReferenceAmount
@@ -315,6 +318,11 @@ namespace Game.Core.Application.Periods
 
             if (amount + ComparisonTolerance < minimumAmount)
             {
+                if (amount + ComparisonTolerance < completionThreshold)
+                {
+                    return 0d;
+                }
+
                 var deficit = Math.Max(0d, minimumAmount - amount);
 
                 if (amount + ComparisonTolerance < severePenaltyThreshold)
@@ -408,6 +416,21 @@ namespace Game.Core.Application.Periods
             return amount + ComparisonTolerance >= fixedAmount
                 ? HolidayBonusUje
                 : 0d;
+        }
+
+        private static double GetCompletionMinimumAmount(PeriodExpenseDefinition expenseDefinition)
+        {
+            if (expenseDefinition == null)
+            {
+                return 0d;
+            }
+
+            if (string.Equals(expenseDefinition.Id, "goods_services", StringComparison.Ordinal))
+            {
+                return Math.Max(0d, expenseDefinition.MinimumAmount) * 0.25d;
+            }
+
+            return Math.Max(0d, expenseDefinition.MinimumAmount);
         }
 
         private static double GetUjeBreakdownMaximumValue(
