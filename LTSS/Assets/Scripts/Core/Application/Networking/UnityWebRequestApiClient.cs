@@ -81,6 +81,28 @@ namespace Game.Core.Application.Networking
                 SendRequest(relativePath, UnityWebRequest.kHttpVerbPOST, payload, onCompleted, options));
         }
 
+        public void PostRaw<TResponse>(
+            string relativePath,
+            string jsonPayload,
+            Action<ApiResponse<TResponse>> onCompleted = null,
+            ApiRequestOptions options = null)
+        {
+            if (_coroutineRunner == null)
+            {
+                _logger.Error("CoroutineRunner is not available for HTTP POST request execution.");
+                onCompleted?.Invoke(new ApiResponse<TResponse>(
+                    false,
+                    0,
+                    "CoroutineRunner is not available.",
+                    string.Empty,
+                    default));
+                return;
+            }
+
+            _coroutineRunner.StartCoroutine(
+                SendRequest(relativePath, UnityWebRequest.kHttpVerbPOST, jsonPayload ?? string.Empty, onCompleted, options));
+        }
+
         private IEnumerator SendRequest<TResponse>(
             string relativePath,
             string method,

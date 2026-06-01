@@ -14,5 +14,11 @@ namespace Game.Core.Application.Networking
             TRequest body,
             Action<ApiResponse<TResponse>> onCompleted = null,
             ApiRequestOptions options = null);
+
+        void PostRaw<TResponse>(
+            string relativePath,
+            string jsonPayload,
+            Action<ApiResponse<TResponse>> onCompleted = null,
+            ApiRequestOptions options = null);
     }
 }

@@ -10,20 +10,26 @@ namespace Game.Core.Application.Session
         public int periodNumber;
         public string checkpointJson;
         public string summaryJson;
-        public string clientTimestampUtc;
+        public string submittedAt;
     }
 
     [Serializable]
     public sealed class SurveySubmissionRequestDto
     {
-        public string surveyCode;
-        public string payloadJson;
+        public int surveyTemplateId;
+        public int periodNumber;
+        public bool hasPeriodNumber;
+        public string responseJson;
+        public string submittedAt;
     }
 
     [Serializable]
     public sealed class LogBatchRequestDto
     {
-        public string[] entries;
+        public int periodNumber;
+        public bool hasPeriodNumber;
+        public string batchType;
+        public string payloadJson;
     }
 
     [Serializable]

@@ -24,6 +24,7 @@ namespace Game.Core.Application.Periods
         private readonly IApplicationStateStore _stateStore;
         private readonly IPopupNavigationService _popupNavigation;
         private readonly IUserActionLogger _userActionLogger;
+        private readonly IRunTelemetryService _runTelemetryService;
         private readonly IAppLogger _logger;
         private readonly IEventAggregator _eventAggregator;
         private readonly IJsonSerializer _serializer;
@@ -50,6 +51,7 @@ namespace Game.Core.Application.Periods
             IApplicationStateStore stateStore,
             IPopupNavigationService popupNavigation,
             IUserActionLogger userActionLogger,
+            IRunTelemetryService runTelemetryService,
             IAppLogger logger,
             IEventAggregator eventAggregator,
             IJsonSerializer serializer)
@@ -64,6 +66,7 @@ namespace Game.Core.Application.Periods
             _stateStore = stateStore;
             _popupNavigation = popupNavigation;
             _userActionLogger = userActionLogger;
+            _runTelemetryService = runTelemetryService;
             _logger = logger;
             _eventAggregator = eventAggregator;
             _serializer = serializer;
@@ -234,6 +237,15 @@ namespace Game.Core.Application.Periods
                 string.Empty,
                 string.Empty,
                 true);
+
+            LogPeriodInteraction(
+                "expense_amount_set",
+                new Dictionary<string, string>
+                {
+                    ["expenseId"] = expenseId,
+                    ["amount"] = amount.ToString(CultureInfo.InvariantCulture),
+                    ["source"] = PeriodContractMapper.ToFundsSourceCode(currentExpenseState.Source)
+                });
         }
 
         public void ApplyRequiredExpenseAmount(string expenseId)
@@ -253,6 +265,14 @@ namespace Game.Core.Application.Periods
             SetExpenseAmount(
                 expenseId,
                 targetAmount.ToString("0.##", CultureInfo.InvariantCulture));
+
+            LogPeriodInteraction(
+                "required_expense_applied",
+                new Dictionary<string, string>
+                {
+                    ["expenseId"] = expenseId,
+                    ["amount"] = targetAmount.ToString(CultureInfo.InvariantCulture)
+                });
         }
 
         public void CycleExpenseSource(string expenseId)
@@ -315,6 +335,13 @@ namespace Game.Core.Application.Periods
                 string.Empty,
                 string.Empty,
                 true);
+
+            LogPeriodInteraction(
+                "expense_source_cycled",
+                new Dictionary<string, string>
+                {
+                    ["expenseId"] = expenseId
+                });
         }
 
         public void SetExpenseSource(string expenseId, FundsSourceType source)
@@ -385,6 +412,14 @@ namespace Game.Core.Application.Periods
                 string.Empty,
                 string.Empty,
                 true);
+
+            LogPeriodInteraction(
+                "expense_source_set",
+                new Dictionary<string, string>
+                {
+                    ["expenseId"] = expenseId,
+                    ["source"] = PeriodContractMapper.ToFundsSourceCode(source)
+                });
         }
 
         public void OpenAssetDialog(string assetId, AssetOperationKind kind)
@@ -624,6 +659,16 @@ namespace Game.Core.Application.Periods
                 string.Empty,
                 true);
 
+            LogPeriodInteraction(
+                "asset_operation_submitted",
+                new Dictionary<string, string>
+                {
+                    ["assetId"] = _current.AssetDialog.AssetId,
+                    ["kind"] = PeriodContractMapper.ToAssetOperationKindCode(_current.AssetDialog.Kind),
+                    ["source"] = PeriodContractMapper.ToFundsSourceCode(_current.AssetDialog.SelectedSource),
+                    ["amount"] = amount.ToString(CultureInfo.InvariantCulture)
+                });
+
             Debug.Log(
                 $"[PeriodDebug] ApplyMutation completed for asset submit. NewOperationCount={(_current.AssetOperations != null ? _current.AssetOperations.Count : 0)}, Cash={_current.Summary.CashBalance}, Deposit={_current.Summary.DepositBalance}, Remaining={_current.Summary.RemainingToAllocate}.");
 
@@ -712,6 +757,14 @@ namespace Game.Core.Application.Periods
 
             Publish(nextState);
             PersistCurrentState();
+
+            LogPeriodInteraction(
+                "consumer_credit_submitted",
+                new Dictionary<string, string>
+                {
+                    ["principal"] = principal.ToString(CultureInfo.InvariantCulture),
+                    ["payment"] = periodicPayment.ToString(CultureInfo.InvariantCulture)
+                });
             return true;
         }
 
@@ -775,6 +828,14 @@ namespace Game.Core.Application.Periods
 
             Publish(nextState);
             PersistCurrentState();
+
+            LogPeriodInteraction(
+                "apartment_purchased",
+                new Dictionary<string, string>
+                {
+                    ["mode"] = ConsumerCreditMath.DirectApartmentPurchaseMode,
+                    ["price"] = apartmentCost.ToString(CultureInfo.InvariantCulture)
+                });
             return true;
         }
 
@@ -866,6 +927,15 @@ namespace Game.Core.Application.Periods
 
             Publish(nextState);
             PersistCurrentState();
+
+            LogPeriodInteraction(
+                "mortgage_submitted",
+                new Dictionary<string, string>
+                {
+                    ["downPayment"] = downPayment.ToString(CultureInfo.InvariantCulture),
+                    ["principal"] = mortgagePrincipal.ToString(CultureInfo.InvariantCulture),
+                    ["payment"] = periodicPayment.ToString(CultureInfo.InvariantCulture)
+                });
             return true;
         }
 
@@ -886,6 +956,7 @@ namespace Game.Core.Application.Periods
             }
 
             SellApartment();
+            LogPeriodInteraction("apartment_sold");
             return true;
         }
 
@@ -934,6 +1005,7 @@ namespace Game.Core.Application.Periods
             }
 
             var currentPds = _current.Definition.PdsAccount;
+            var isActivatingPds = currentPds == null && allowActivation;
 
             if (!allowActivation && currentPds == null)
             {
@@ -1069,6 +1141,18 @@ namespace Game.Core.Application.Periods
 
             Publish(nextState);
             PersistCurrentState();
+
+            LogPeriodInteraction(
+                isActivatingPds
+                    ? "pds_activated"
+                    : "pds_updated",
+                new Dictionary<string, string>
+                {
+                    ["contributionAmount"] = contributionAmount.ToString(CultureInfo.InvariantCulture),
+                    ["pensionTransferAmount"] = pensionTransferAmount.ToString(CultureInfo.InvariantCulture),
+                    ["bonusAmount"] = bonusDelta.ToString(CultureInfo.InvariantCulture),
+                    ["pdsBalance"] = nextPdsBalance.ToString(CultureInfo.InvariantCulture)
+                });
             return true;
         }
 
@@ -1085,6 +1169,7 @@ namespace Game.Core.Application.Periods
             var nextState = WithPermanentIncomeLoss(_current);
             Publish(nextState.With(statusMessage: "Располагаемый доход обнулён.", lastError: string.Empty));
             PersistCurrentState();
+            LogPeriodInteraction("income_loss_applied");
         }
 
         public void SubmitPeriod()
@@ -1171,7 +1256,9 @@ namespace Game.Core.Application.Periods
                 {
                     if (response != null && response.IsSuccess)
                     {
-                        var submittedAt = DateTime.UtcNow.ToString("O");
+                        var submittedAt = string.IsNullOrWhiteSpace(request.submittedAt)
+                            ? DateTime.UtcNow.ToString("O")
+                            : request.submittedAt;
                         var submittedPeriodNumber = _current.PeriodNumber;
                         var totalPeriods = ResolveTotalPeriodCount(clientRuntime);
                         var hasNextPeriod = totalPeriods > 0 && _current.PeriodNumber < totalPeriods;
@@ -1218,6 +1305,7 @@ namespace Game.Core.Application.Periods
                                         UserActionType.Interaction,
                                         "period_checkpoint_submit_succeeded",
                                         BuildPeriodMetadata(closedState));
+                                    _runTelemetryService?.FlushPending("period_checkpoint_submit_succeeded");
                                 });
                             }
                             else
@@ -1238,6 +1326,7 @@ namespace Game.Core.Application.Periods
                                     UserActionType.Interaction,
                                     "period_checkpoint_submit_succeeded",
                                     BuildPeriodMetadata(closedState));
+                                _runTelemetryService?.FlushPending("period_checkpoint_submit_succeeded");
                             }
 
                             return;
@@ -1259,6 +1348,7 @@ namespace Game.Core.Application.Periods
                             UserActionType.Interaction,
                             "period_checkpoint_submit_succeeded",
                             BuildPeriodMetadata(completedState));
+                        _runTelemetryService?.FlushPending("period_checkpoint_submit_succeeded");
                         return;
                     }
 
@@ -1931,6 +2021,34 @@ namespace Game.Core.Application.Periods
             metadata["flow"] = PeriodContractMapper.ToPeriodFlowStateCode(state.FlowState);
             metadata["submitted"] = state.IsCheckpointSubmitted.ToString();
             return metadata;
+        }
+
+        private void LogPeriodInteraction(string name, IDictionary<string, string> metadata = null)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return;
+            }
+
+            var baseMetadata = BuildPeriodMetadata(_current);
+
+            if (metadata != null)
+            {
+                foreach (var pair in metadata)
+                {
+                    if (string.IsNullOrWhiteSpace(pair.Key))
+                    {
+                        continue;
+                    }
+
+                    baseMetadata[pair.Key] = pair.Value ?? string.Empty;
+                }
+            }
+
+            _userActionLogger.Log(
+                UserActionType.Interaction,
+                name,
+                baseMetadata);
         }
 
         private void Publish(PeriodRuntimeState nextState)

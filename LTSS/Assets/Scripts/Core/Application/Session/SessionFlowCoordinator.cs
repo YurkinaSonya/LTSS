@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Game.Core.Application;
 using Game.Core.Application.Logging;
 using Game.Core.Application.Navigation;
+using Game.Core.Application.Networking;
 using Game.Core.Application.Periods;
 using Game.Core.Application.State;
 using Game.Core.Events;
@@ -22,6 +23,9 @@ namespace Game.Core.Application.Session
         private readonly IGameSessionService _gameSessionService;
         private readonly IApplicationNavigationService _navigation;
         private readonly IUserActionLogger _userActionLogger;
+        private readonly ISurveySubmissionSender _surveySubmissionSender;
+        private readonly IRunTelemetryService _runTelemetryService;
+        private readonly IJsonSerializer _serializer;
         private readonly IAppLogger _logger;
         private readonly IEventAggregator _eventAggregator;
 
@@ -40,6 +44,9 @@ namespace Game.Core.Application.Session
             IGameSessionService gameSessionService,
             IApplicationNavigationService navigation,
             IUserActionLogger userActionLogger,
+            ISurveySubmissionSender surveySubmissionSender,
+            IRunTelemetryService runTelemetryService,
+            IJsonSerializer serializer,
             IAppLogger logger,
             IEventAggregator eventAggregator)
         {
@@ -51,6 +58,9 @@ namespace Game.Core.Application.Session
             _gameSessionService = gameSessionService;
             _navigation = navigation;
             _userActionLogger = userActionLogger;
+            _surveySubmissionSender = surveySubmissionSender;
+            _runTelemetryService = runTelemetryService;
+            _serializer = serializer;
             _logger = logger;
             _eventAggregator = eventAggregator;
 
@@ -158,6 +168,7 @@ namespace Game.Core.Application.Session
 
         public void CompleteActiveStep()
         {
+            var activeView = _current != null ? _current.ActiveStepView : SessionFlowStepViewModel.Empty;
             var descriptor = _current != null && _current.Progress != null
                 ? _current.Progress.ActiveStep
                 : SessionFlowStepDescriptor.Empty;
@@ -170,6 +181,11 @@ namespace Game.Core.Application.Session
             var nextProgress = _current.Progress
                 .WithCompleted(descriptor.Scope, descriptor.Key)
                 .WithActiveStep(SessionFlowStepDescriptor.Empty, descriptor.PeriodNumber);
+
+            _userActionLogger.Log(
+                UserActionType.Interaction,
+                "flow_step_completed",
+                BuildFlowStepMetadata(_sessionCoordinator != null ? _sessionCoordinator.CurrentRuntime : ClientRuntimeState.Empty, descriptor, activeView));
 
             ResolveAndPublish(
                 _sessionCoordinator.CurrentRuntime,
@@ -225,6 +241,11 @@ namespace Game.Core.Application.Session
                 .WithCompleted(descriptor.Scope, descriptor.Key)
                 .WithActiveStep(SessionFlowStepDescriptor.Empty, descriptor.PeriodNumber);
 
+            _userActionLogger.Log(
+                UserActionType.Interaction,
+                "flow_step_skipped",
+                BuildFlowStepMetadata(_sessionCoordinator != null ? _sessionCoordinator.CurrentRuntime : ClientRuntimeState.Empty, descriptor, activeView));
+
             ResolveAndPublish(
                 _sessionCoordinator.CurrentRuntime,
                 _current.Config,
@@ -257,6 +278,113 @@ namespace Game.Core.Application.Session
                     validationError,
                     false));
                 ApplyScreenState(ScreenId.FlowStep, string.Empty, validationError, false);
+                return;
+            }
+
+            if (_surveySubmissionSender != null)
+            {
+                var clientRuntime = _sessionCoordinator != null
+                    ? _sessionCoordinator.CurrentRuntime
+                    : ClientRuntimeState.Empty;
+
+                if (clientRuntime == null || !clientRuntime.HasSession)
+                {
+                    const string sessionUnavailableError = "Сессия недоступна. Войдите заново и повторите отправку.";
+
+                    Publish(new SessionFlowRuntimeState(
+                        _current.Config,
+                        _current.Progress,
+                        _current.ActiveStepView,
+                        string.Empty,
+                        sessionUnavailableError,
+                        false));
+                    ApplyScreenState(ScreenId.FlowStep, string.Empty, sessionUnavailableError, false);
+                    return;
+                }
+
+                if (!TryBuildSurveySubmissionRequest(
+                        clientRuntime,
+                        descriptor,
+                        activeView,
+                        answers,
+                        out var request,
+                        out var telemetryMetadata,
+                        out var buildError))
+                {
+                    Publish(new SessionFlowRuntimeState(
+                        _current.Config,
+                        _current.Progress,
+                        _current.ActiveStepView,
+                        string.Empty,
+                        buildError,
+                        false));
+                    ApplyScreenState(ScreenId.FlowStep, string.Empty, buildError, false);
+                    return;
+                }
+
+                _userActionLogger.Log(
+                    UserActionType.Interaction,
+                    "survey_submit_started",
+                    telemetryMetadata);
+
+                Publish(new SessionFlowRuntimeState(
+                    _current.Config,
+                    _current.Progress,
+                    _current.ActiveStepView,
+                    "Сохранение ответов...",
+                    string.Empty,
+                    false));
+                ApplyScreenState(ScreenId.FlowStep, "Сохранение ответов...", string.Empty, true);
+
+                _surveySubmissionSender.Send(
+                    clientRuntime.AuthenticatedRun.RunId,
+                    clientRuntime.AuthToken.Token,
+                    request,
+                    response =>
+                    {
+                        if (response != null && response.IsSuccess)
+                        {
+                            _userActionLogger.Log(
+                                UserActionType.Interaction,
+                                "survey_submit_succeeded",
+                                telemetryMetadata);
+                            _runTelemetryService?.FlushPending("survey_submit_succeeded");
+
+                            var nextProgress = _current.Progress
+                                .WithCompleted(descriptor.Scope, descriptor.Key)
+                                .WithActiveStep(SessionFlowStepDescriptor.Empty, descriptor.PeriodNumber);
+
+                            ResolveAndPublish(
+                                clientRuntime,
+                                _current.Config,
+                                nextProgress,
+                                "Ответы сохранены.",
+                                string.Empty);
+                            return;
+                        }
+
+                        var errorMessage = response == null || string.IsNullOrWhiteSpace(response.Error)
+                            ? "Не удалось отправить ответы."
+                            : $"Не удалось отправить ответы. {response.Error}";
+                        var failedMetadata = new Dictionary<string, string>(telemetryMetadata)
+                        {
+                            ["error"] = response == null ? "empty_response" : response.Error ?? string.Empty
+                        };
+
+                        _userActionLogger.Log(
+                            UserActionType.Interaction,
+                            "survey_submit_failed",
+                            failedMetadata);
+
+                        Publish(new SessionFlowRuntimeState(
+                            _current.Config,
+                            _current.Progress,
+                            _current.ActiveStepView,
+                            string.Empty,
+                            errorMessage,
+                            false));
+                        ApplyScreenState(ScreenId.FlowStep, string.Empty, errorMessage, false);
+                    });
                 return;
             }
 
@@ -322,6 +450,12 @@ namespace Game.Core.Application.Session
                     lastError,
                     true));
 
+                _userActionLogger.Log(
+                    UserActionType.SessionLifecycle,
+                    "session_flow_completed",
+                    BuildFlowStepMetadata(clientRuntime, SessionFlowStepDescriptor.Empty, SessionFlowStepViewModel.Empty));
+                _runTelemetryService?.FlushPending("session_flow_completed");
+
                 _sessionCoordinator?.CompleteRunLocally(
                     string.IsNullOrWhiteSpace(statusMessage)
                         ? "Сценарий завершён."
@@ -342,6 +476,11 @@ namespace Game.Core.Application.Session
                 {
                     _sessionCoordinator?.UpdateLocalRunProgress(descriptor.PeriodNumber, RunLifecycleStatus.InProgress);
                 }
+
+                _userActionLogger.Log(
+                    UserActionType.Interaction,
+                    ResolveStepShownEventName(descriptor, SessionFlowStepViewModel.Empty),
+                    BuildFlowStepMetadata(clientRuntime, descriptor, SessionFlowStepViewModel.Empty));
 
                 Publish(new SessionFlowRuntimeState(
                     config,
@@ -370,6 +509,10 @@ namespace Game.Core.Application.Session
                 }
 
                 var interPeriodStepView = BuildStepViewModel(clientRuntime, config, descriptor);
+                _userActionLogger.Log(
+                    UserActionType.Interaction,
+                    ResolveStepShownEventName(descriptor, interPeriodStepView),
+                    BuildFlowStepMetadata(clientRuntime, descriptor, interPeriodStepView));
                 Publish(new SessionFlowRuntimeState(
                     config,
                     nextProgress,
@@ -388,6 +531,10 @@ namespace Game.Core.Application.Session
             }
 
             var activeStepView = BuildStepViewModel(clientRuntime, config, descriptor);
+            _userActionLogger.Log(
+                UserActionType.Interaction,
+                ResolveStepShownEventName(descriptor, activeStepView),
+                BuildFlowStepMetadata(clientRuntime, descriptor, activeStepView));
             Publish(new SessionFlowRuntimeState(
                 config,
                 nextProgress,
@@ -761,6 +908,241 @@ namespace Game.Core.Application.Session
                 "Пропустить",
                 string.Empty,
                 questions);
+        }
+
+        private bool TryBuildSurveySubmissionRequest(
+            ClientRuntimeState clientRuntime,
+            SessionFlowStepDescriptor descriptor,
+            SessionFlowStepViewModel activeView,
+            IReadOnlyDictionary<string, string> answers,
+            out SurveySubmissionRequestDto request,
+            out Dictionary<string, string> telemetryMetadata,
+            out string error)
+        {
+            request = null;
+            telemetryMetadata = new Dictionary<string, string>();
+            error = string.Empty;
+
+            if (clientRuntime == null || !clientRuntime.HasSession)
+            {
+                error = "Сессия недоступна.";
+                return false;
+            }
+
+            if (!TryResolveActiveSurveyTemplate(clientRuntime, _current.Config, descriptor, out var template))
+            {
+                error = "Не удалось определить шаблон анкеты.";
+                return false;
+            }
+
+            request = new SurveySubmissionRequestDto
+            {
+                surveyTemplateId = template.Id,
+                hasPeriodNumber = descriptor.Scope == SessionFlowStepScope.PostPeriodSurvey,
+                periodNumber = descriptor.Scope == SessionFlowStepScope.PostPeriodSurvey
+                    ? descriptor.PeriodNumber
+                    : 0,
+                responseJson = BuildSurveyResponseJson(activeView.Questions, answers),
+                submittedAt = DateTime.UtcNow.ToString("O")
+            };
+
+            telemetryMetadata = BuildSurveyTelemetryMetadata(
+                clientRuntime,
+                descriptor,
+                template,
+                activeView);
+            return true;
+        }
+
+        private bool TryResolveActiveSurveyTemplate(
+            ClientRuntimeState clientRuntime,
+            SessionConfigRuntime config,
+            SessionFlowStepDescriptor descriptor,
+            out SurveyTemplateRuntimeModel template)
+        {
+            template = null;
+
+            if (descriptor == null || !descriptor.IsDefined)
+            {
+                return false;
+            }
+
+            if (descriptor.Scope == SessionFlowStepScope.PostPeriodSurvey)
+            {
+                return TryResolveSurveyTemplate(
+                    clientRuntime,
+                    ResolvePostPeriodSurvey(config, descriptor.PeriodNumber, descriptor.Key),
+                    out template);
+            }
+
+            if (descriptor.Scope != SessionFlowStepScope.PreSession
+                && descriptor.Scope != SessionFlowStepScope.PostSession)
+            {
+                return false;
+            }
+
+            var flowStep = ResolveFlowStep(config, descriptor.Scope, descriptor.Key);
+
+            if (flowStep == null)
+            {
+                return false;
+            }
+
+            return TryResolveSurveyTemplate(
+                clientRuntime,
+                ResolveSurveyRef(flowStep.SurveyRef, config),
+                out template);
+        }
+
+        private string BuildSurveyResponseJson(
+            IReadOnlyList<SessionFlowQuestionRuntime> questions,
+            IReadOnlyDictionary<string, string> answers)
+        {
+            var questionIds = new List<string>();
+
+            if (questions != null)
+            {
+                for (var index = 0; index < questions.Count; index++)
+                {
+                    var question = questions[index];
+
+                    if (question != null && !string.IsNullOrWhiteSpace(question.Id))
+                    {
+                        questionIds.Add(question.Id);
+                    }
+                }
+            }
+
+            if (answers != null)
+            {
+                foreach (var pair in answers)
+                {
+                    if (!string.IsNullOrWhiteSpace(pair.Key)
+                        && !questionIds.Contains(pair.Key))
+                    {
+                        questionIds.Add(pair.Key);
+                    }
+                }
+            }
+
+            var payloadAnswers = new SurveyAnswerPayloadDto[questionIds.Count];
+
+            for (var index = 0; index < questionIds.Count; index++)
+            {
+                var questionId = questionIds[index];
+                var value = string.Empty;
+                answers?.TryGetValue(questionId, out value);
+                payloadAnswers[index] = new SurveyAnswerPayloadDto
+                {
+                    questionId = questionId ?? string.Empty,
+                    value = value ?? string.Empty
+                };
+            }
+
+            return _serializer.Serialize(new SurveyResponsePayloadDto
+            {
+                answers = payloadAnswers
+            });
+        }
+
+        private static Dictionary<string, string> BuildSurveyTelemetryMetadata(
+            ClientRuntimeState clientRuntime,
+            SessionFlowStepDescriptor descriptor,
+            SurveyTemplateRuntimeModel template,
+            SessionFlowStepViewModel activeView)
+        {
+            var metadata = BuildFlowStepMetadata(clientRuntime, descriptor, activeView);
+            metadata["surveyTemplateId"] = template != null ? template.Id.ToString() : "0";
+
+            if (template != null && !string.IsNullOrWhiteSpace(template.Code))
+            {
+                metadata["surveyTemplateCode"] = template.Code;
+            }
+
+            return metadata;
+        }
+
+        private static Dictionary<string, string> BuildFlowStepMetadata(
+            ClientRuntimeState clientRuntime,
+            SessionFlowStepDescriptor descriptor,
+            SessionFlowStepViewModel activeView)
+        {
+            var metadata = new Dictionary<string, string>();
+
+            if (clientRuntime != null
+                && clientRuntime.AuthenticatedRun != null
+                && !string.IsNullOrWhiteSpace(clientRuntime.AuthenticatedRun.RunId))
+            {
+                metadata["runId"] = clientRuntime.AuthenticatedRun.RunId;
+            }
+
+            if (descriptor != null && descriptor.IsDefined)
+            {
+                metadata["stepKey"] = descriptor.Key ?? string.Empty;
+                metadata["stepScope"] = descriptor.Scope.ToString();
+                metadata["stepType"] = descriptor.Type.ToString();
+
+                if (descriptor.PeriodNumber > 0)
+                {
+                    metadata["period"] = descriptor.PeriodNumber.ToString();
+                }
+            }
+
+            if (activeView != null && !string.IsNullOrWhiteSpace(activeView.Title))
+            {
+                metadata["title"] = activeView.Title;
+            }
+
+            return metadata;
+        }
+
+        private static string ResolveStepShownEventName(
+            SessionFlowStepDescriptor descriptor,
+            SessionFlowStepViewModel activeView)
+        {
+            if (descriptor == null || !descriptor.IsDefined)
+            {
+                return "flow_step_opened";
+            }
+
+            if (descriptor.Scope == SessionFlowStepScope.PeriodGameplay)
+            {
+                return "period_opened";
+            }
+
+            if (descriptor.Scope == SessionFlowStepScope.InterPeriodBlock)
+            {
+                return "interperiod_block_opened";
+            }
+
+            if (activeView != null && activeView.RendererKind == SessionFlowRendererKind.Survey)
+            {
+                switch (descriptor.Type)
+                {
+                    case SessionFlowStepType.InstructionQuiz:
+                        return "instruction_quiz_opened";
+                    case SessionFlowStepType.PreTest:
+                        return "pretest_opened";
+                    case SessionFlowStepType.PostTest:
+                        return "posttest_opened";
+                    case SessionFlowStepType.PostPeriodSurvey:
+                        return "postperiod_survey_opened";
+                    default:
+                        return "survey_opened";
+                }
+            }
+
+            switch (descriptor.Type)
+            {
+                case SessionFlowStepType.Instruction:
+                    return "instruction_opened";
+                case SessionFlowStepType.InstructionalPopup:
+                    return "instructional_popup_opened";
+                case SessionFlowStepType.News:
+                    return "news_block_opened";
+                default:
+                    return "flow_step_opened";
+            }
         }
 
         private static IReadOnlyList<SessionFlowQuestionRuntime> BuildSurveyQuestions(SurveyTemplateRuntimeModel template)
@@ -1457,6 +1839,19 @@ namespace Game.Core.Application.Session
             }
 
             return null;
+        }
+
+        [Serializable]
+        private sealed class SurveyResponsePayloadDto
+        {
+            public SurveyAnswerPayloadDto[] answers;
+        }
+
+        [Serializable]
+        private sealed class SurveyAnswerPayloadDto
+        {
+            public string questionId;
+            public string value;
         }
     }
 }

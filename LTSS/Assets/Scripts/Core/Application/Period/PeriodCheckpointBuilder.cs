@@ -251,7 +251,7 @@ namespace Game.Core.Application.Periods
                 periodNumber = runtimeState.PeriodNumber,
                 checkpointJson = _serializer.Serialize(checkpointEnvelope),
                 summaryJson = _serializer.Serialize(summaryPayload),
-                clientTimestampUtc = DateTime.UtcNow.ToString("O")
+                submittedAt = DateTime.UtcNow.ToString("O")
             };
 
             return true;

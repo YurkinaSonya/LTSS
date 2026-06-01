@@ -3,12 +3,12 @@ using Game.Core.Application.Networking;
 
 namespace Game.Core.Application.Session
 {
-    public sealed class CheckpointSender : ICheckpointSender
+    public sealed class SurveySubmissionSender : ISurveySubmissionSender
     {
         private readonly IApiClient _apiClient;
         private readonly IJsonSerializer _serializer;
 
-        public CheckpointSender(
+        public SurveySubmissionSender(
             IApiClient apiClient,
             IJsonSerializer serializer)
         {
@@ -19,11 +19,11 @@ namespace Game.Core.Application.Session
         public void Send(
             string runId,
             string bearerToken,
-            CheckpointRequestDto request,
+            SurveySubmissionRequestDto request,
             Action<ApiResponse<ServerAckDto>> onCompleted = null)
         {
-            var path = $"api/run/{runId}/checkpoint";
-            var payload = ParticipantWritePayloadBuilder.BuildCheckpointRequestJson(request);
+            var path = $"api/run/{runId}/surveys/submit";
+            var payload = ParticipantWritePayloadBuilder.BuildSurveySubmissionRequestJson(request);
 
             _apiClient.PostRaw<string>(
                 path,

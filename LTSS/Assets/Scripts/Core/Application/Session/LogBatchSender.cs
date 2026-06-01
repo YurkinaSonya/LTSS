@@ -3,12 +3,12 @@ using Game.Core.Application.Networking;
 
 namespace Game.Core.Application.Session
 {
-    public sealed class CheckpointSender : ICheckpointSender
+    public sealed class LogBatchSender : ILogBatchSender
     {
         private readonly IApiClient _apiClient;
         private readonly IJsonSerializer _serializer;
 
-        public CheckpointSender(
+        public LogBatchSender(
             IApiClient apiClient,
             IJsonSerializer serializer)
         {
@@ -19,11 +19,11 @@ namespace Game.Core.Application.Session
         public void Send(
             string runId,
             string bearerToken,
-            CheckpointRequestDto request,
+            LogBatchRequestDto request,
             Action<ApiResponse<ServerAckDto>> onCompleted = null)
         {
-            var path = $"api/run/{runId}/checkpoint";
-            var payload = ParticipantWritePayloadBuilder.BuildCheckpointRequestJson(request);
+            var path = $"api/run/{runId}/logs/batch";
+            var payload = ParticipantWritePayloadBuilder.BuildLogBatchRequestJson(request);
 
             _apiClient.PostRaw<string>(
                 path,

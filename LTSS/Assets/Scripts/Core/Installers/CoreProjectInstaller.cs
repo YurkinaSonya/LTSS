@@ -142,6 +142,20 @@ namespace Game.Core.Installers
                 .AsSingle()
                 .NonLazy();
 
+            Container.Bind<ISurveySubmissionSender>()
+                .To<SurveySubmissionSender>()
+                .AsSingle()
+                .NonLazy();
+
+            Container.Bind<ILogBatchSender>()
+                .To<LogBatchSender>()
+                .AsSingle()
+                .NonLazy();
+
+            Container.BindInterfacesAndSelfTo<RunTelemetryService>()
+                .AsSingle()
+                .NonLazy();
+
             Container.Bind<IPeriodGameplayService>()
                 .To<PeriodGameplayService>()
                 .AsSingle()
