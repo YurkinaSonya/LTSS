@@ -1941,11 +1941,35 @@ namespace Game.Core.Application.Periods
             var salePrice = ConsumerCreditMath.CalculateResidenceCurrentValue(
                 _current.Definition.ResidenceOwnership,
                 _current.Definition.EconomyContext);
+            var mortgageRemainingPrincipal = 0d;
+            var currentCredits = _current.Definition.ConsumerCredits ?? Array.Empty<ConsumerCreditContractRuntime>();
+            var nextCredits = new List<ConsumerCreditContractRuntime>(currentCredits.Count);
+
+            for (var index = 0; index < currentCredits.Count; index++)
+            {
+                var credit = currentCredits[index];
+
+                if (credit == null)
+                {
+                    continue;
+                }
+
+                if (string.Equals(credit.ContractType, ConsumerCreditMath.MortgageKind, StringComparison.Ordinal))
+                {
+                    mortgageRemainingPrincipal += Math.Max(0d, credit.RemainingPrincipal);
+                    continue;
+                }
+
+                nextCredits.Add(credit);
+            }
+
+            var netSaleProceeds = Math.Max(0d, salePrice - mortgageRemainingPrincipal);
             var nextDefinition = BuildStateAwareDefinition(
                 _current.Definition,
+                consumerCredits: nextCredits,
                 residenceOwnership: null,
                 replaceResidenceOwnership: true,
-                initialCashBalance: _current.Definition.InitialCashBalance + Math.Max(0d, salePrice));
+                initialCashBalance: _current.Definition.InitialCashBalance + netSaleProceeds);
             var nextExpenses = BuildResidenceAwareExpenseStates(_current.Expenses, nextDefinition.ExpenseDefinitions);
             var nextSummary = _calculationEngine.Recalculate(nextDefinition, nextExpenses, _current.AssetOperations);
             var nextStatus = summary.CashBalance >= 0d
