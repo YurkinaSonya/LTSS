@@ -568,7 +568,9 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
                     var badgeAmount = string.Equals(expenseDefinition.Id, "holiday", StringComparison.Ordinal)
                         ? expenseDefinition.MaximumAmount
                         : expenseDefinition.MinimumAmount;
-                    widgets.RequiredBadgeLabel.text = FormatMoney(badgeAmount);
+                    widgets.RequiredBadgeLabel.text = string.Equals(expenseDefinition.Id, "goods_services", StringComparison.Ordinal)
+                        ? $"мин. {FormatMoney(badgeAmount)}"
+                        : FormatMoney(badgeAmount);
                 }
             }
 

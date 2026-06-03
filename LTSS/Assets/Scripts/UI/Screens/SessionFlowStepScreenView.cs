@@ -139,6 +139,7 @@ public sealed class SessionFlowStepScreenView : ScreenView
         _secondaryButton.gameObject.SetActive(canShowSecondary);
         _instructionReferenceButton.gameObject.SetActive(
             isSurvey && !string.IsNullOrWhiteSpace(_instructionReferenceBody));
+        ApplyPrimaryButtonText(viewModel);
 
         if (canShowSecondary)
         {
@@ -165,11 +166,11 @@ public sealed class SessionFlowStepScreenView : ScreenView
         return result;
     }
 
-    public bool TryPrepareSurveySubmission()
+    public bool TryPrepareCurrentSurveyPage()
     {
         var answers = CollectAnswers();
 
-        if (HasMissingRequiredAnswers(answers))
+        if (HasMissingRequiredAnswersForCurrentPage(answers))
         {
             return false;
         }
@@ -179,7 +180,7 @@ public sealed class SessionFlowStepScreenView : ScreenView
             return true;
         }
 
-        var incorrectAnswersCount = CountIncorrectInstructionQuizAnswers();
+        var incorrectAnswersCount = CountIncorrectInstructionQuizAnswersOnCurrentPage();
 
         if (incorrectAnswersCount <= 0)
         {
@@ -188,7 +189,29 @@ public sealed class SessionFlowStepScreenView : ScreenView
 
         OpenInstructionReferencePopup(
             $"Вы ответили неправильно на {incorrectAnswersCount} {GetQuestionCountWordForm(incorrectAnswersCount)} теста. Перечитайте инструкцию и проверьте ответы еще раз.");
+        OpenInstructionReferencePopup(
+            $"\u0412\u044b \u043e\u0442\u0432\u0435\u0442\u0438\u043b\u0438 \u043d\u0435\u043f\u0440\u0430\u0432\u0438\u043b\u044c\u043d\u043e \u043d\u0430 {incorrectAnswersCount} {GetQuestionCountWordForm(incorrectAnswersCount)} \u044d\u0442\u043e\u0439 \u0441\u0442\u0440\u0430\u043d\u0438\u0446\u044b \u0442\u0435\u0441\u0442\u0430. \u041f\u0435\u0440\u0435\u0447\u0438\u0442\u0430\u0439\u0442\u0435 \u0438\u043d\u0441\u0442\u0440\u0443\u043a\u0446\u0438\u044e \u0438 \u043f\u0440\u043e\u0432\u0435\u0440\u044c\u0442\u0435 \u043e\u0442\u0432\u0435\u0442\u044b \u0435\u0449\u0435 \u0440\u0430\u0437.");
         return false;
+    }
+
+    public bool HasNextSurveyPage()
+    {
+        return _pageOrder.Count > 1 && _currentPageIndex < _pageOrder.Count - 1;
+    }
+
+    public void AdvanceToNextSurveyPage()
+    {
+        if (!HasNextSurveyPage())
+        {
+            return;
+        }
+
+        _currentPageIndex++;
+        RefreshPageVisibility();
+
+        var viewModel = GetCurrentViewModel();
+        ApplyPrimaryButtonText(viewModel);
+        UpdatePrimaryButtonInteractable(viewModel);
     }
 
     private void EnsureBuilt()
@@ -1001,6 +1024,8 @@ public sealed class SessionFlowStepScreenView : ScreenView
     private void RefreshPageVisibility()
     {
         var hasMultiplePages = _pageOrder.Count > 1;
+        var viewModel = GetCurrentViewModel();
+        var isSurvey = viewModel != null && viewModel.RendererKind == SessionFlowRendererKind.Survey;
 
         foreach (var pair in _questionBindings)
         {
@@ -1017,19 +1042,23 @@ public sealed class SessionFlowStepScreenView : ScreenView
 
         if (_previousPageButton != null)
         {
-            _previousPageButton.gameObject.SetActive(hasMultiplePages);
+            _previousPageButton.gameObject.SetActive(hasMultiplePages && !isSurvey);
             _previousPageButton.interactable = _currentPageIndex > 0;
         }
 
         if (_nextPageButton != null)
         {
-            _nextPageButton.gameObject.SetActive(hasMultiplePages);
-            _nextPageButton.interactable = _currentPageIndex < _pageOrder.Count - 1;
+            _nextPageButton.gameObject.SetActive(hasMultiplePages && !isSurvey);
+            var currentViewModel = viewModel;
+            _nextPageButton.interactable = _currentPageIndex < _pageOrder.Count - 1
+                && (currentViewModel == null
+                    || currentViewModel.RendererKind != SessionFlowRendererKind.Survey
+                    || !HasMissingRequiredAnswersForCurrentPage(CollectAnswers()));
         }
 
         if (_pageIndicatorLabel != null)
         {
-            _pageIndicatorLabel.gameObject.SetActive(hasMultiplePages);
+            _pageIndicatorLabel.gameObject.SetActive(hasMultiplePages && !isSurvey);
             _pageIndicatorLabel.text = hasMultiplePages
                 ? $"{_currentPageIndex + 1} / {_pageOrder.Count}"
                 : string.Empty;
@@ -1037,7 +1066,7 @@ public sealed class SessionFlowStepScreenView : ScreenView
 
         if (_paginationRow != null)
         {
-            _paginationRow.gameObject.SetActive(hasMultiplePages);
+            _paginationRow.gameObject.SetActive(hasMultiplePages && !isSurvey);
         }
 
         if (_questionScrollRect != null)
@@ -1045,6 +1074,9 @@ public sealed class SessionFlowStepScreenView : ScreenView
             Canvas.ForceUpdateCanvases();
             _questionScrollRect.verticalNormalizedPosition = 1f;
         }
+
+        ApplyPrimaryButtonText(viewModel);
+        UpdatePrimaryButtonInteractable(viewModel);
     }
 
     private void GoToPreviousPage()
@@ -1065,8 +1097,81 @@ public sealed class SessionFlowStepScreenView : ScreenView
             return;
         }
 
-        _currentPageIndex++;
-        RefreshPageVisibility();
+        var viewModel = GetCurrentViewModel();
+
+        if (viewModel != null
+            && viewModel.RendererKind == SessionFlowRendererKind.Survey
+            && !TryPrepareCurrentSurveyPage())
+        {
+            return;
+        }
+
+        AdvanceToNextSurveyPage();
+    }
+
+    private bool IsBindingOnCurrentPage(QuestionBinding binding)
+    {
+        if (binding == null || _pageOrder.Count == 0)
+        {
+            return true;
+        }
+
+        var pageIndex = _pageOrder[Mathf.Clamp(_currentPageIndex, 0, _pageOrder.Count - 1)];
+        return binding.PageIndex == pageIndex;
+    }
+
+    private SessionFlowStepViewModel GetCurrentViewModel()
+    {
+        var flowState = _context != null && _context.SessionFlow != null
+            ? _context.SessionFlow.Current
+            : SessionFlowRuntimeState.Empty;
+        return flowState != null
+            ? flowState.ActiveStepView
+            : SessionFlowStepViewModel.Empty;
+    }
+
+    private void UpdatePrimaryButtonText(SessionFlowStepViewModel viewModel)
+    {
+        if (_primaryButton == null)
+        {
+            return;
+        }
+
+        var defaultText = viewModel != null && !string.IsNullOrWhiteSpace(viewModel.PrimaryActionText)
+            ? viewModel.PrimaryActionText
+            : "Ð”Ð°Ð»ÐµÐµ";
+
+        if (viewModel != null
+            && viewModel.RendererKind == SessionFlowRendererKind.Survey
+            && HasNextSurveyPage())
+        {
+            RuntimeUiFactory.SetButtonText(_primaryButton, "Ð”Ð°Ð»ÐµÐµ");
+            return;
+        }
+
+        RuntimeUiFactory.SetButtonText(_primaryButton, defaultText);
+    }
+
+    private void ApplyPrimaryButtonText(SessionFlowStepViewModel viewModel)
+    {
+        if (_primaryButton == null)
+        {
+            return;
+        }
+
+        var defaultText = viewModel != null && !string.IsNullOrWhiteSpace(viewModel.PrimaryActionText)
+            ? viewModel.PrimaryActionText
+            : "\u0414\u0430\u043b\u0435\u0435";
+
+        if (viewModel != null
+            && viewModel.RendererKind == SessionFlowRendererKind.Survey
+            && HasNextSurveyPage())
+        {
+            RuntimeUiFactory.SetButtonText(_primaryButton, "\u0414\u0430\u043b\u0435\u0435");
+            return;
+        }
+
+        RuntimeUiFactory.SetButtonText(_primaryButton, defaultText);
     }
 
     private static string BuildSurveyProgressKey(int periodNumber, SurveyRefRuntime surveyRef, int index)
@@ -1191,6 +1296,31 @@ public sealed class SessionFlowStepScreenView : ScreenView
         return false;
     }
 
+    private bool HasMissingRequiredAnswersForCurrentPage(IReadOnlyDictionary<string, string> answers)
+    {
+        foreach (var pair in _questionBindings)
+        {
+            var binding = pair.Value;
+
+            if (binding == null
+                || binding.Question == null
+                || !binding.Question.IsRequired
+                || !IsBindingOnCurrentPage(binding))
+            {
+                continue;
+            }
+
+            if (answers == null
+                || !answers.TryGetValue(binding.Question.Id, out var value)
+                || string.IsNullOrWhiteSpace(value))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private void ApplyStepLayoutPreset(bool isSurvey, bool hasBody)
     {
         if (_cardRect == null
@@ -1287,12 +1417,14 @@ public sealed class SessionFlowStepScreenView : ScreenView
             && binding.Question.IsCheckableChoiceQuestion)
         {
             EvaluateCheckableQuestion(binding);
+            OnSurveyAnswerChanged();
+            return;
         }
 
         OnSurveyAnswerChanged();
     }
 
-    private int CountIncorrectInstructionQuizAnswers()
+    private int CountIncorrectInstructionQuizAnswersOnCurrentPage()
     {
         var incorrectAnswersCount = 0;
 
@@ -1302,7 +1434,8 @@ public sealed class SessionFlowStepScreenView : ScreenView
 
             if (binding == null
                 || binding.Question == null
-                || !binding.Question.IsCheckableChoiceQuestion)
+                || !binding.Question.IsCheckableChoiceQuestion
+                || !IsBindingOnCurrentPage(binding))
             {
                 continue;
             }
@@ -1329,7 +1462,7 @@ public sealed class SessionFlowStepScreenView : ScreenView
             return;
         }
 
-        _primaryButton.interactable = !HasMissingRequiredAnswers(CollectAnswers());
+        _primaryButton.interactable = !HasMissingRequiredAnswersForCurrentPage(CollectAnswers());
     }
 
     private static bool IsCheckableQuestionAnsweredCorrectly(QuestionBinding binding)

@@ -1931,7 +1931,7 @@ namespace Game.Core.Application.Periods
                 0d,
                 0d,
                 remainingAmount,
-                new[] { FundsSourceType.CurrentIncome, FundsSourceType.Cash, FundsSourceType.Deposit },
+                new[] { FundsSourceType.CurrentIncome, FundsSourceType.Cash },
                 0d,
                 targetAmount,
                 "Долгосрочная цель на повышение дохода."));
@@ -2154,7 +2154,7 @@ namespace Game.Core.Application.Periods
                         0d,
                         0d,
                         ConsumerCreditMath.CalculateEducationTargetAmount(ConsumerCreditMath.DefaultBaseIncomeEcu),
-                        new[] { FundsSourceType.CurrentIncome, FundsSourceType.Cash, FundsSourceType.Deposit },
+                        new[] { FundsSourceType.CurrentIncome, FundsSourceType.Cash },
                         0d,
                         ConsumerCreditMath.CalculateEducationTargetAmount(ConsumerCreditMath.DefaultBaseIncomeEcu),
                         "Долгосрочная цель на повышение дохода.");

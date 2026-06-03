@@ -60,8 +60,14 @@ public sealed class SessionFlowStepScreenController : ScreenController
 
         if (viewModel.RendererKind == SessionFlowRendererKind.Survey)
         {
-            if (!_view.TryPrepareSurveySubmission())
+            if (!_view.TryPrepareCurrentSurveyPage())
             {
+                return;
+            }
+
+            if (_view.HasNextSurveyPage())
+            {
+                _view.AdvanceToNextSurveyPage();
                 return;
             }
 
