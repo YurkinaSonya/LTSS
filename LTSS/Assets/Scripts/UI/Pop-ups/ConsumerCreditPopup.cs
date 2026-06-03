@@ -34,7 +34,7 @@ public sealed class ConsumerCreditPopup : Popup
         }
         else
         {
-            SetMessage("Сервис периода недоступен.");
+            SetMessage("\u0421\u0435\u0440\u0432\u0438\u0441 \u043F\u0435\u0440\u0438\u043E\u0434\u0430 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D.");
         }
 
         if (_amountInput != null)
@@ -68,7 +68,7 @@ public sealed class ConsumerCreditPopup : Popup
     {
         if (Context.PeriodGameplay == null)
         {
-            SetMessage("Сервис периода недоступен.");
+            SetMessage("\u0421\u0435\u0440\u0432\u0438\u0441 \u043F\u0435\u0440\u0438\u043E\u0434\u0430 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D.");
             return;
         }
 
@@ -98,11 +98,11 @@ public sealed class ConsumerCreditPopup : Popup
             : 0d;
         var potential = ConsumerCreditMath.CalculateCreditPotential(definition);
 
-        _titleLabel.text = "Потребительский кредит";
-        _subtitleLabel.text = "Срок кредита фиксирован: 5 периодов.";
-        _rateLabel.text = $"Ставка периода: {ratePercent.ToString("0.##", CultureInfo.InvariantCulture)}%";
-        _termLabel.text = $"Срок: {ConsumerCreditMath.DefaultTermPeriods} периодов";
-        _potentialLabel.text = $"Кредитный потенциал: {EcuFormatter.FormatAmount(potential)}";
+        _titleLabel.text = "\u041F\u043E\u0442\u0440\u0435\u0431\u0438\u0442\u0435\u043B\u044C\u0441\u043A\u0438\u0439 \u043A\u0440\u0435\u0434\u0438\u0442";
+        _subtitleLabel.text = "\u0421\u0440\u043E\u043A \u043A\u0440\u0435\u0434\u0438\u0442\u0430 \u0444\u0438\u043A\u0441\u0438\u0440\u043E\u0432\u0430\u043D: 5 \u043F\u0435\u0440\u0438\u043E\u0434\u043E\u0432.";
+        _rateLabel.text = $"\u0421\u0442\u0430\u0432\u043A\u0430 \u043F\u0435\u0440\u0438\u043E\u0434\u0430: {ratePercent.ToString("0.##", CultureInfo.InvariantCulture)}%";
+        _termLabel.text = $"\u0421\u0440\u043E\u043A: {ConsumerCreditMath.DefaultTermPeriods} \u043F\u0435\u0440\u0438\u043E\u0434\u043E\u0432";
+        _potentialLabel.text = $"\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u044B\u0439 \u043B\u0438\u043C\u0438\u0442: {EcuFormatter.FormatAmount(potential)}";
 
         if (string.IsNullOrWhiteSpace(_messageLabel.text) && !string.IsNullOrWhiteSpace(latestRuntime.StatusMessage))
         {
@@ -120,7 +120,7 @@ public sealed class ConsumerCreditPopup : Popup
 
         if (runtimeState == null || !runtimeState.HasDefinition)
         {
-            _paymentLabel.text = "Платёж за период: -";
+            _paymentLabel.text = "\u041F\u043B\u0430\u0442\u0451\u0436 \u0437\u0430 \u043F\u0435\u0440\u0438\u043E\u0434: -";
             return;
         }
 
@@ -132,20 +132,21 @@ public sealed class ConsumerCreditPopup : Popup
 
         if (!NumericInputParser.TryParseNonNegativeAmount(ReadAmountText(), out var principal) || principal <= 0d)
         {
-            _paymentLabel.text = "Платёж за период: -";
+            _paymentLabel.text = "\u041F\u043B\u0430\u0442\u0451\u0436 \u0437\u0430 \u043F\u0435\u0440\u0438\u043E\u0434: -";
             _confirmButton.interactable = true;
             return;
         }
 
         var payment = ConsumerCreditMath.CalculateAnnuityPayment(principal, ratePercent);
-        _paymentLabel.text = $"Платёж за период: {EcuFormatter.FormatAmount(payment)}";
+        _paymentLabel.text = $"\u041F\u043B\u0430\u0442\u0451\u0436 \u0437\u0430 \u043F\u0435\u0440\u0438\u043E\u0434: {EcuFormatter.FormatAmount(payment)}";
 
-        if (payment > potential + 0.01d)
+        if (principal > potential + 0.01d)
         {
-            SetMessage($"Платёж превышает кредитный потенциал ({EcuFormatter.FormatAmount(potential)}).");
+            SetMessage($"\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E {EcuFormatter.FormatAmount(potential)} \u043A\u0440\u0435\u0434\u0438\u0442\u043D\u043E\u0433\u043E \u043B\u0438\u043C\u0438\u0442\u0430.");
         }
         else if (!string.IsNullOrWhiteSpace(_messageLabel.text)
-                 && _messageLabel.text.Contains("кредитный потенциал"))
+                 && (_messageLabel.text.Contains("\u043F\u043E\u0442\u0435\u043D\u0446\u0438\u0430\u043B")
+                     || _messageLabel.text.Contains("\u043B\u0438\u043C\u0438\u0442")))
         {
             SetMessage(string.Empty);
         }
@@ -169,7 +170,10 @@ public sealed class ConsumerCreditPopup : Popup
             new RectOffset(28, 28, 26, 24),
             12f);
 
-        _titleLabel = RuntimeUiFactory.CreateTitle(content, "Потребительский кредит", TextAnchor.MiddleLeft);
+        _titleLabel = RuntimeUiFactory.CreateTitle(
+            content,
+            "\u041F\u043E\u0442\u0440\u0435\u0431\u0438\u0442\u0435\u043B\u044C\u0441\u043A\u0438\u0439 \u043A\u0440\u0435\u0434\u0438\u0442",
+            TextAnchor.MiddleLeft);
         _subtitleLabel = RuntimeUiFactory.CreateCaption(content, string.Empty);
 
         var infoPanel = RuntimeUiFactory.CreateSurface("InfoPanel", content, RuntimeUiFactory.PrimarySoftColor);
@@ -186,16 +190,16 @@ public sealed class ConsumerCreditPopup : Popup
         _termLabel = RuntimeUiFactory.CreateCaption(infoPanel, string.Empty);
         _potentialLabel = RuntimeUiFactory.CreateCaption(infoPanel, string.Empty);
 
-        RuntimeUiFactory.CreateCaption(content, "Сумма кредита");
-        _amountInput = RuntimeUiFactory.CreateInputField(content, "Введите сумму");
+        RuntimeUiFactory.CreateCaption(content, "\u0421\u0443\u043C\u043C\u0430 \u043A\u0440\u0435\u0434\u0438\u0442\u0430");
+        _amountInput = RuntimeUiFactory.CreateInputField(content, "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u0441\u0443\u043C\u043C\u0443");
         NumericInputParser.Configure(_amountInput);
-        _paymentLabel = RuntimeUiFactory.CreateBodyText(content, "Платёж за период: -");
+        _paymentLabel = RuntimeUiFactory.CreateBodyText(content, "\u041F\u043B\u0430\u0442\u0451\u0436 \u0437\u0430 \u043F\u0435\u0440\u0438\u043E\u0434: -");
         _messageLabel = RuntimeUiFactory.CreateErrorText(content);
 
         RuntimeUiFactory.AddFlexibleSpacer(content);
         var actions = RuntimeUiFactory.CreateRow("Actions", content, 12f, TextAnchor.MiddleCenter);
-        _cancelButton = RuntimeUiFactory.CreateSecondaryButton(actions, "Отмена", 46f);
-        _confirmButton = RuntimeUiFactory.CreatePrimaryButton(actions, "Оформить", 46f);
+        _cancelButton = RuntimeUiFactory.CreateSecondaryButton(actions, "\u041E\u0442\u043C\u0435\u043D\u0430", 46f);
+        _confirmButton = RuntimeUiFactory.CreatePrimaryButton(actions, "\u041E\u0444\u043E\u0440\u043C\u0438\u0442\u044C", 46f);
     }
 
     private string ReadAmountText()

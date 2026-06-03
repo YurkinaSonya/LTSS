@@ -224,7 +224,27 @@ namespace Game.Core.Application.Periods
                 mandatoryBaseAmount += Math.Max(0d, expense.MinimumAmount);
             }
 
-            return Math.Max(0d, income - mandatoryBaseAmount);
+            var basePotential = Math.Max(0d, income - mandatoryBaseAmount);
+            var activeConsumerCreditPrincipal = 0d;
+
+            if (definition.ConsumerCredits != null)
+            {
+                for (var index = 0; index < definition.ConsumerCredits.Count; index++)
+                {
+                    var credit = definition.ConsumerCredits[index];
+
+                    if (credit == null
+                        || !string.Equals(credit.ContractType, ConsumerCreditKind, StringComparison.Ordinal)
+                        || credit.RemainingPrincipal <= 0.01d)
+                    {
+                        continue;
+                    }
+
+                    activeConsumerCreditPrincipal += Math.Max(0d, credit.RemainingPrincipal);
+                }
+            }
+
+            return Math.Max(0d, basePotential - activeConsumerCreditPrincipal);
         }
 
         public static string BuildExpenseId(string creditId)

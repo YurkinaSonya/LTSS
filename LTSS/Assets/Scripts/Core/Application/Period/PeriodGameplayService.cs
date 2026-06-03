@@ -716,9 +716,9 @@ namespace Game.Core.Application.Periods
             var periodicPayment = ConsumerCreditMath.CalculateAnnuityPayment(principal, ratePercent);
             var creditPotential = ConsumerCreditMath.CalculateCreditPotential(definition);
 
-            if (periodicPayment > creditPotential + 0.01d)
+            if (principal > creditPotential + 0.01d)
             {
-                errorMessage = $"Платёж по кредиту превышает кредитный потенциал ({EcuFormatter.FormatAmount(creditPotential)}).";
+                errorMessage = $"Доступно только {EcuFormatter.FormatAmount(creditPotential)} кредитного лимита.";
                 return false;
             }
 

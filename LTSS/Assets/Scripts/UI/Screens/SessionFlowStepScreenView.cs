@@ -1312,7 +1312,8 @@ public sealed class SessionFlowStepScreenView : ScreenView
 
             if (answers == null
                 || !answers.TryGetValue(binding.Question.Id, out var value)
-                || string.IsNullOrWhiteSpace(value))
+                || string.IsNullOrWhiteSpace(value)
+                || !IsQuestionAnswerValid(binding, value))
             {
                 return true;
             }
@@ -1421,6 +1422,7 @@ public sealed class SessionFlowStepScreenView : ScreenView
             return;
         }
 
+        UpdateTextQuestionFeedback(binding);
         OnSurveyAnswerChanged();
     }
 
@@ -1490,6 +1492,50 @@ public sealed class SessionFlowStepScreenView : ScreenView
             : selectedOptionIds.Count == 1
               && correctOptionIds.Count == 1
               && string.Equals(selectedOptionIds[0], correctOptionIds[0], StringComparison.Ordinal);
+    }
+
+    private void UpdateTextQuestionFeedback(QuestionBinding binding)
+    {
+        if (binding == null || binding.Question == null)
+        {
+            return;
+        }
+
+        if (!IsAgeQuestion(binding.Question))
+        {
+            SetQuestionFeedback(binding, string.Empty, true);
+            return;
+        }
+
+        var value = CollectQuestionAnswer(binding);
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            SetQuestionFeedback(binding, string.Empty, true);
+            return;
+        }
+
+        SetQuestionFeedback(
+            binding,
+            IsAgeAnswerValid(value) ? string.Empty : "Возраст должен быть от 18 до 70.",
+            IsAgeAnswerValid(value));
+    }
+
+    private static bool IsQuestionAnswerValid(QuestionBinding binding, string value)
+    {
+        if (binding == null || binding.Question == null)
+        {
+            return true;
+        }
+
+        return !IsAgeQuestion(binding.Question) || IsAgeAnswerValid(value);
+    }
+
+    private static bool IsAgeAnswerValid(string value)
+    {
+        return int.TryParse((value ?? string.Empty).Trim(), out var age)
+               && age >= 18
+               && age <= 70;
     }
 
     private void EvaluateCheckableQuestion(QuestionBinding binding)
