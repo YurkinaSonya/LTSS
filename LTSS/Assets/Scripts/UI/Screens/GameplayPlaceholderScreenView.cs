@@ -557,7 +557,8 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
             if (widgets.RequiredBadge != null)
             {
                 var showRequiredBadge = expenseDefinition.IsRequired && expenseDefinition.MinimumAmount > 0d
-                    || string.Equals(expenseDefinition.Id, "holiday", StringComparison.Ordinal) && expenseDefinition.MaximumAmount > 0d;
+                    || string.Equals(expenseDefinition.Id, "holiday", StringComparison.Ordinal) && expenseDefinition.MaximumAmount > 0d
+                    || string.Equals(expenseDefinition.Id, "leisure", StringComparison.Ordinal);
                 widgets.RequiredBadge.SetActive(showRequiredBadge);
 
                 if (showRequiredBadge && widgets.RequiredBadgeLabel != null)
@@ -565,9 +566,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
                     widgets.RequiredBadgeLabel.text = string.Equals(expenseDefinition.Id, "housing_rent", StringComparison.Ordinal)
                         ? FormatMoney(expenseDefinition.MinimumAmount)
                         : $"мин. {FormatMoney(expenseDefinition.MinimumAmount)}";
-                    var badgeAmount = string.Equals(expenseDefinition.Id, "holiday", StringComparison.Ordinal)
-                        ? expenseDefinition.MaximumAmount
-                        : expenseDefinition.MinimumAmount;
+                    var badgeAmount = GetExpenseBadgeAmount(runtimeState, expenseDefinition);
                     widgets.RequiredBadgeLabel.text = string.Equals(expenseDefinition.Id, "goods_services", StringComparison.Ordinal)
                         ? $"мин. {FormatMoney(badgeAmount)}"
                         : FormatMoney(badgeAmount);
@@ -977,7 +976,7 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
             requiredBadgeFitter.verticalFit = ContentSizeFitter.FitMode.Unconstrained;
             var requiredLabel = RuntimeUiFactory.CreateBodyText(requiredBadge, string.Empty, TextAnchor.MiddleCenter);
             requiredLabel.fontSize = 12;
-            requiredLabel.color = RuntimeUiFactory.PrimaryColor;
+            requiredLabel.color = RuntimeUiFactory.TextPrimaryColor;
             RuntimeUiFactory.ApplyTextStyle(requiredLabel, FontStyle.Bold);
             requiredBadge.gameObject.SetActive(false);
 
@@ -1453,6 +1452,35 @@ public sealed class GameplayPlaceholderScreenView : ScreenView
     private static string FormatMoney(double value)
     {
         return EcuFormatter.FormatAmount(value);
+    }
+
+    private static double GetExpenseBadgeAmount(
+        PeriodRuntimeState runtimeState,
+        PeriodExpenseDefinition expenseDefinition)
+    {
+        if (expenseDefinition == null)
+        {
+            return 0d;
+        }
+
+        if (string.Equals(expenseDefinition.Id, "holiday", StringComparison.Ordinal))
+        {
+            return Math.Max(0d, expenseDefinition.MaximumAmount);
+        }
+
+        if (string.Equals(expenseDefinition.Id, "leisure", StringComparison.Ordinal))
+        {
+            var income = runtimeState != null
+                         && runtimeState.HasDefinition
+                         && runtimeState.Definition.CalculationSettings != null
+                ? Math.Max(0d, runtimeState.Definition.CalculationSettings.CurrentIncomeEcu)
+                : 0d;
+            return income > 0d
+                ? income * 0.05d
+                : ConsumerCreditMath.DefaultBaseIncomeEcu * 0.05d;
+        }
+
+        return Math.Max(0d, expenseDefinition.MinimumAmount);
     }
 
     private static string FormatInfoValue(PeriodInfoBlockValue infoValue)

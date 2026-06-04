@@ -480,9 +480,9 @@ public sealed class InterPeriodBlockPopup : Popup
         _firedSystemNumberLabel.text = $"Система выбрала число: {systemNumber}";
         _firedSystemNumberLabel.gameObject.SetActive(true);
         _firedResultLabel.text = participantIsFired
-            ? "Вас уволили! С этого момента ваш располагаемый доход всегда равен 0."
+            ? "Вас уволили! Ваш располагаемый доход в следующем периоде будет равен 0."
             : "Вы успешно избежали увольнения!";
-        _firedResultLabel.color = participantIsFired
+        _firedResultLabel.color = participantIsFired 
             ? RuntimeUiFactory.DangerColor
             : RuntimeUiFactory.TextPrimaryColor;
         _firedResultLabel.gameObject.SetActive(true);

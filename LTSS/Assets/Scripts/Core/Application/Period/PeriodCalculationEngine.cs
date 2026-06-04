@@ -11,11 +11,10 @@ namespace Game.Core.Application.Periods
         private const double GoodsServicesMinBase = 20d;
         private const double GoodsServicesUpperBase = 60d;
         private const double HousingRentBase = 20d;
-        private const double LeisureFirstBase = 10d;
+        private const double LeisureRecommendedIncomeRatio = 0.05d;
         private const double LeisureUpperBase = 100d;
         private const double HolidayBase = 10d;
         private const double HolidayBonusUje = 15d;
-        private const double LeisureZeroSpendPenalty = -10d;
         private const double DebtUjePenaltyRate = 0.5d;
         private const double GoodsServicesSeverePenaltyRate = 4d;
         private const double GoodsServicesMildPenaltyRate = 1.5d;
@@ -369,12 +368,12 @@ namespace Game.Core.Application.Periods
             PeriodRuntimeDefinition definition,
             double amount)
         {
-            var firstThreshold = ScaleThreshold(definition, LeisureFirstBase);
+            var firstThreshold = CalculateLeisureRecommendedAmount(definition);
             var upperThreshold = ScaleThreshold(definition, LeisureUpperBase);
 
             if (amount <= ComparisonTolerance)
             {
-                return LeisureZeroSpendPenalty;
+                return -firstThreshold;
             }
 
             double coefficient;
@@ -397,6 +396,17 @@ namespace Game.Core.Application.Periods
             }
 
             return amount * coefficient;
+        }
+
+        private static double CalculateLeisureRecommendedAmount(PeriodRuntimeDefinition definition)
+        {
+            var income = definition != null && definition.CalculationSettings != null
+                ? Math.Max(0d, definition.CalculationSettings.CurrentIncomeEcu)
+                : 0d;
+
+            return income > 0d
+                ? income * LeisureRecommendedIncomeRatio
+                : ConsumerCreditMath.DefaultBaseIncomeEcu * LeisureRecommendedIncomeRatio;
         }
 
         private static double CalculateHolidayContribution(

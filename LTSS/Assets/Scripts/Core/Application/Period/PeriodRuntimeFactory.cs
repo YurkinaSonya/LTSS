@@ -808,7 +808,8 @@ namespace Game.Core.Application.Periods
                 : ConsumerCreditMath.CalculateEducationTargetAmount(economyContext);
             var accumulatedAmount = Math.Max(0d, Math.Min(targetAmount, snapshot.accumulatedAmount));
 
-            if (accumulatedAmount <= 0.0001d
+            if (targetAmount <= 0.0001d
+                && accumulatedAmount <= 0.0001d
                 && snapshot.goalReachedPeriodNumber <= 0
                 && snapshot.incomeBoostStartPeriodNumber <= 0)
             {
