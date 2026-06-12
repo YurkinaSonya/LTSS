@@ -256,9 +256,22 @@ namespace Game.Core.Application.Periods
             }
 
             var definition = FindExpenseDefinition(expenseId);
+            var currentExpenseState = FindExpenseState(expenseId);
 
-            if (!TryResolveQuickApplyAmount(definition, out var targetAmount))
+            if (currentExpenseState == null || !TryResolveQuickApplyAmount(definition, out var targetAmount))
             {
+                return;
+            }
+
+            var availableAmount = ResolveAvailableAmountForExpense(currentExpenseState, currentExpenseState.Source);
+
+            if (targetAmount > availableAmount + 0.01d
+                && !CanUseDebtForExpense(definition, currentExpenseState.Source))
+            {
+                RejectExpenseMutation(BuildExpenseSourceValidationMessage(
+                    definition,
+                    currentExpenseState.Source,
+                    availableAmount));
                 return;
             }
 
@@ -1839,12 +1852,7 @@ namespace Game.Core.Application.Periods
         private bool CanUseDebtForExpense(PeriodExpenseDefinition definition, FundsSourceType targetSource)
         {
             return definition != null
-                && definition.IsRequired
-                && targetSource == FundsSourceType.Cash
-                && _current != null
-                && _current.HasDefinition
-                && _current.Definition.EconomyContext != null
-                && _current.Definition.EconomyContext.HasPermanentIncomeLoss;
+                && targetSource == FundsSourceType.Cash;
         }
 
         private double ResolveAvailableAmountForExpense(PeriodExpenseState expenseState, FundsSourceType targetSource)

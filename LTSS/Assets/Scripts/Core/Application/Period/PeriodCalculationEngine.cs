@@ -15,7 +15,7 @@ namespace Game.Core.Application.Periods
         private const double LeisureUpperBase = 100d;
         private const double HolidayBase = 10d;
         private const double HolidayBonusUje = 15d;
-        private const double DebtUjePenaltyRate = 0.5d;
+        private const double DebtUjePenaltyRate = 10d;
         private const double GoodsServicesSeverePenaltyRate = 4d;
         private const double GoodsServicesMildPenaltyRate = 1.5d;
         private const double GoodsServicesCompletionThresholdRatio = 0.25d;
@@ -554,7 +554,7 @@ namespace Game.Core.Application.Periods
                 && definition.EconomyContext != null
                 && definition.EconomyContext.HasPermanentIncomeLoss;
 
-            if (!allowDebt && cashBalance < -tolerance)
+            if (false && cashBalance < -tolerance)
             {
                 issues.Add(new PeriodValidationIssue(
                     "cash_negative",
@@ -580,8 +580,6 @@ namespace Game.Core.Application.Periods
             ref double projectedUjeDelta)
         {
             if (definition == null
-                || definition.EconomyContext == null
-                || !definition.EconomyContext.HasPermanentIncomeLoss
                 || cashBalance >= -ComparisonTolerance)
             {
                 return;

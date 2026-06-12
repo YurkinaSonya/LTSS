@@ -1639,8 +1639,8 @@ namespace Game.Core.Application.Periods
                 return economyContext;
             }
 
-            // The education bonus increases disposable income, but expense thresholds
-            // that scale from income should stay anchored to the pre-bonus income path.
+            var boostedIncome = economyContext.CurrentIncomeEcu * ConsumerCreditMath.EducationIncomeMultiplier;
+
             return new PeriodEconomyContext(
                 economyContext.CurrentPeriodNumber,
                 economyContext.HistoricalYear,
@@ -1650,8 +1650,8 @@ namespace Game.Core.Application.Periods
                 economyContext.CreditRate,
                 economyContext.MortgageRate,
                 economyContext.BaseIncomeEcu,
-                economyContext.CurrentIncomeEcu * ConsumerCreditMath.EducationIncomeMultiplier,
-                economyContext.ReferenceIncomeEcu,
+                boostedIncome,
+                boostedIncome,
                 economyContext.ExpenseInflationMultiplier,
                 economyContext.CurrentInflationMultiplier,
                 economyContext.CashValueMultiplier,
